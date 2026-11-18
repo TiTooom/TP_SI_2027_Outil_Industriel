@@ -28,3 +28,67 @@ données sans dépendance vis-à-vis de fournisseurs tiers. Elle est conçue pou
 et paramétrable afin que les techniciens puissent définir eux-mêmes les automates et variables à surveiller. Plus qu’une
 simple solution technique, il s’agit de développer un outil stratégique pour l’industrie, qui répond aux exigences
 d’autonomie et de résilience tout en restant accessible financièrement
+
+# Description de l’application
+
+Votre mission est de concevoir un prototype de solution de suivi modulaire et portable, pensé pour s’adapter à divers
+environnements industriels. Cette application open source doit fournir aux industriels un outil de suivi indépendant et
+flexible, capable de surveiller en temps réel les variables critiques d’automates (par exemple, température, pression).
+Elle doit permettre aux utilisateurs de configurer facilement les adresses IP des automates et les variables à surveiller
+via une interface intuitive. Les données collectées seront affichées sur un tableau de bord interactif pour faciliter
+l’analyse et la prise de décision. Pensée pour un déploiement rapide sur un réseau local, cette application représente
+une alternative aux solutions propriétaires, offrant une autonomie totale tout en minimisant les coûts.
+
+# Objectifs de l'application
+
+1. Paramétrage des variables : Une interface simple pour configurer les paramètres des automates et définir les
+variables à surveiller.
+2. Supervision en temps réel : Un tableau de bord clair et interactif pour visualiser les variables monitorées.
+3. Utilisation de solutions open source : Un développement basé sur des technologies libres pour garantir
+indépendance et maîtrise des coûts.
+4. Déploiement rapide : Une architecture permettant une installation en quelques minutes, adaptée aux besoins
+urgents de supervision.
+
+# Parcours utilisateur envisagé
+Le parcours utilisateur met en lumière les fonctionnalités clés auxquelles les techniciens ou ingénieurs auront accès
+pour surveiller et exploiter les données en temps réel et historique.
+
+1. Accès à l’application : L’application est accessible via un navigateur sur le réseau local de l’entreprise.
+L’utilisateur (technicien, ingénieur, etc.) peut accéder aux fonctionnalités de configuration et de supervision.
+2. Configuration des paramètres : L’utilisateur peut ajouter ou modifier les paramètres des variables à surveiller.
+Pour chaque variable, il peut définir le nom, l’adresse IP de l’automate, la variable à lire, et la fréquence
+d’enregistrement. Ces paramètres sont sauvegardés dans la base de données pour être utilisés par le backend.
+3. Supervision en temps réel : Pour chaque variable surveillée, un tableau de bord affiche les données en temps
+réel sous forme de graphiques. Ce graphique se met à jour automatiquement en fonction de la fréquence
+d’enregistrement configurée. Cette interface simple permet à l’utilisateur d’interpréter les résultats
+rapidement sans autre logiciel spécifique.
+4. Consultation des données historiques : Les données des variables surveillées peuvent être exportées via une
+interface dotée d’un formulaire permettant de définir une plage de dates. L’export se fait au format CSV, afin
+de faciliter leur exploitation dans d’autres outils spécifiques ou leur partage avec d’autres équipes.
+
+# Parcours Backend envisagé
+
+Le parcours backend détaille les processus invisibles qui orchestrent la récupération des données des automates, leur
+stockage et leur mise à disposition pour le frontend.
+
+1. Initialisation et Chargement des Paramètres : Au démarrage, le backend se connecte à la base de données
+pour récupérer la liste des variables à surveiller (IP des automates, registres à lire, fréquence, etc.). Il initialise
+les tâches périodiques de supervision en fonction des paramètres configurés.
+2. Surveillance et Lecture des Automates : Le backend lit et les variables automate à surveiller, à intervalles
+réguliers, en fonction de la fréquence définie pour chaque variable dans la base de données. Il gère les
+connexions Modbus et gère les erreurs en cas de défaillance de connexion ou de lecture.
+3. Enregistrement des Données en Base : Après chaque lecture, les valeurs récupérées sont sauvegardées dans
+la base de données, avec un horodatage. Cette historisation permet la consultation et l’export des données par
+les utilisateurs.
+4. API REST pour le Frontend : Le backend expose des routes pour permettre au frontend de notamment :
+o Ajouter, modifier ou supprimer des paramètres de surveillance.
+o Afficher les valeurs de la variable surveillée pour interprétation sous graphique depuis le frontend.
+o Récupérer les données historiques pour une période donnée et les mettre à disposition en
+téléchargement via un fichier CSV.
+5. Gestion des Tâches Périodiques : Le backend surveille en continu les variables configurées grâce à des tâches
+périodiques (par exemple, avec node-cron ou un équivalent). Ces tâches s'adaptent dynamiquement : si des
+modifications sont apportées dans la configuration (par exemple, ajout d'une nouvelle variable), elles sont
+prises en compte sans nécessiter de redémarrage du serveur.
+6. Déploiement et Accessibilité : Le backend est déployé dans un conteneur Docker et configuré pour écouter
+sur un port spécifique. Il est accessible depuis d’autres machines du réseau pour communiquer avec le frontend
+ou d’autres services.
