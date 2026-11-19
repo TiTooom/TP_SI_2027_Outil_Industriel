@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administration — Supervision Process</title>
+  <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-pending">
+  <nav id="app-nav"></nav>
+
+  <main class="container-xl py-4">
+    <h1 class="h4 mb-3">Administration</h1>
+    <div class="alert alert-success" id="flash-ok" role="status" hidden></div>
+    <div class="alert alert-danger" id="flash-error" role="alert" hidden></div>
+
+    <!-- Comptes -->
+    <section class="panel mb-4" aria-labelledby="users-title">
+      <div class="panel-head">
+        <h2 class="h5 mb-0" id="users-title">Comptes</h2>
+        <button type="button" class="btn btn-primary btn-sm" id="user-add">Créer un compte</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm align-middle mb-0">
+          <thead><tr>
+            <th scope="col">Identifiant</th><th scope="col">E-mail</th><th scope="col">Rôle</th>
+            <th scope="col">Équipes</th><th scope="col">Créé le</th>
+            <th scope="col" class="text-end">Actions</th>
+          </tr></thead>
+          <tbody id="user-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="user-state" role="status">Chargement…</p>
+    </section>
+
+    <!-- Équipes -->
+    <section class="panel" aria-labelledby="teams-title">
+      <div class="panel-head">
+        <h2 class="h5 mb-0" id="teams-title">Équipes</h2>
+        <button type="button" class="btn btn-primary btn-sm" id="team-add">Créer une équipe</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm align-middle mb-0">
+          <thead><tr>
+            <th scope="col">Nom</th><th scope="col">Membres</th><th scope="col">Ajouter un membre</th>
+            <th scope="col" class="text-end">Actions</th>
+          </tr></thead>
+          <tbody id="team-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="team-state" role="status">Chargement…</p>
+    </section>
+  </main>
+
+  <!-- Création / modification de compte -->
+  <dialog id="user-dialog" aria-labelledby="user-dialog-title">
+    <form id="user-form" novalidate>
+      <h2 class="h5" id="user-dialog-title"></h2>
+      <div class="alert alert-danger" id="user-error" role="alert" hidden></div>
+      <div class="mb-3" id="user-name-group">
+        <label class="form-label" for="user-name">Identifiant (3 à 50 : lettres, chiffres, . _ -)</label>
+        <input class="form-control" id="user-name" name="username" maxlength="50" autocomplete="off">
+        <div class="invalid-feedback"></div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="user-email">E-mail (facultatif)</label>
+        <input class="form-control" id="user-email" name="email" type="email" maxlength="255" autocomplete="off">
+        <div class="invalid-feedback"></div>
+      </div>
+      <div class="mb-3" id="user-pass-group">
+        <label class="form-label" for="user-pass">Mot de passe initial (10 à 128 caractères)</label>
+        <input class="form-control" id="user-pass" name="password" type="password" maxlength="128" autocomplete="new-password">
+        <div class="invalid-feedback"></div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="user-role">Rôle</label>
+        <select class="form-select" id="user-role" name="role">
+          <option value="viewer">Lecteur : consultation seule</option>
+          <option value="technician">Technicien : active/désactive, règle la fréquence</option>
+          <option value="engineer">Ingénieur : configure automates et variables</option>
+          <option value="admin">Administrateur : comptes et équipes</option>
+        </select>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline-secondary" data-close>Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Réinitialisation de mot de passe -->
+  <dialog id="pass-dialog" aria-labelledby="pass-dialog-title">
+    <form id="pass-form" novalidate>
+      <h2 class="h5" id="pass-dialog-title"></h2>
+      <div class="alert alert-danger" id="pass-error" role="alert" hidden></div>
+      <div class="mb-3">
+        <label class="form-label" for="pass-new">Nouveau mot de passe (10 à 128 caractères)</label>
+        <input class="form-control" id="pass-new" name="new_password" type="password" maxlength="128" autocomplete="new-password">
+        <div class="invalid-feedback"></div>
+      </div>
+      <p class="role-note">Les sessions ouvertes de ce compte seront fermées.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline-secondary" data-close>Annuler</button>
+        <button type="submit" class="btn btn-primary">Réinitialiser</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Équipe : création / renommage -->
+  <dialog id="team-dialog" aria-labelledby="team-dialog-title">
+    <form id="team-form" novalidate>
+      <h2 class="h5" id="team-dialog-title"></h2>
+      <div class="alert alert-danger" id="team-error" role="alert" hidden></div>
+      <div class="mb-3">
+        <label class="form-label" for="team-name">Nom de l'équipe (1 à 100 caractères)</label>
+        <input class="form-control" id="team-name" name="name" maxlength="100" autocomplete="off">
+        <div class="invalid-feedback"></div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline-secondary" data-close>Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirmation de suppression -->
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 class="h5" id="confirm-title">Confirmer la suppression</h2>
+      <p id="confirm-text"></p>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-outline-secondary" value="cancel">Annuler</button>
+        <button type="submit" class="btn btn-danger" value="confirm">Supprimer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

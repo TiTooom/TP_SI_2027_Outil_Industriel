@@ -7,6 +7,9 @@ Object.assign(process.env, {
   DB_API_USER: 'api', DB_API_PASSWORD: 'x', DB_POLLER_USER: 'poller', DB_POLLER_PASSWORD: 'x',
 });
 const { createApp } = require('../src/app');
+const { authDeps, installAuthFetch } = require('./helpers/fakeAuth');
+
+installAuthFetch('admin');
 const { validateMeasuresQuery } = require('../src/validation/measures');
 
 const M1 = { ts: '2026-11-19T10:00:02.123Z', value: 21.4, quality: 'good' };
@@ -33,7 +36,7 @@ beforeEach(() => {
     findRange: async (id, from, to, limit) => { rangeArgs = { id, from, to, limit }; return [{ ...M1, value: rawValue }, M2]; },
   };
   server.removeAllListeners('request');
-  server.on('request', createApp({ plcRepo: {}, variableRepo, measureRepo, poller: {} }));
+  server.on('request', createApp({ plcRepo: {}, variableRepo, measureRepo, poller: {}, ...authDeps() }));
 });
 
 before(async () => {

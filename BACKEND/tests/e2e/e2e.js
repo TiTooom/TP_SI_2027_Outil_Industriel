@@ -8,6 +8,7 @@ const NGINX = process.env.E2E_NGINX || 'http://localhost:8080/api';
 const ROOT = path.resolve(__dirname, '../../..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
+let cookie = ''; // cookie de session de l'admin, renseigné par login()
 
 function check(name, ok, detail = '') {
   results.push({ name, ok });
@@ -17,7 +18,7 @@ function check(name, ok, detail = '') {
 async function call(method, url, body, raw) {
   const res = await fetch(url, {
     method,
-    headers: raw !== undefined ? { 'Content-Type': 'application/json' } : body ? { 'Content-Type': 'application/json' } : {},
+    headers: { ...(raw !== undefined || body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
     body: raw !== undefined ? raw : body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -39,7 +40,24 @@ const count = (id, quality) =>
 
 const compose = (c) => execSync(`docker compose ${c}`, { cwd: ROOT, stdio: 'pipe' });
 
+// Connexion avec le compte admin amorcé par le backend (ADMIN_USERNAME / ADMIN_PASSWORD, lus dans l'env ou .env).
+async function login() {
+  if (!process.env.ADMIN_PASSWORD) {
+    try { process.loadEnvFile(path.join(ROOT, '.env')); } catch { /* pas de .env : l'erreur ci-dessous guide */ }
+  }
+  const username = process.env.ADMIN_USERNAME || 'admin';
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) throw new Error('ADMIN_PASSWORD must be set in the environment to run the e2e');
+  const res = await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }),
+  });
+  check('login admin 200', res.status === 200, String(res.status));
+  cookie = (res.headers.getSetCookie()[0] || '').split(';')[0];
+  check('cookie sid posé', cookie.startsWith('sid='));
+}
+
 async function main() {
+  await login();
   const base = { plc_id: 1, register_type: 'holding', address: 0, data_type: 'int16', scale: 0.1, unit: 'C', frequency_s: 1 };
   const name = `e2e-${Date.now()}`;
 
@@ -142,7 +160,7 @@ async function main() {
   // J4 : export CSV, arrondi, variables supprimées (mesures de test insérées via root, loin dans le passé)
   const EX = `${API}/export.csv`;
   const callRaw = async (url) => {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: { Cookie: cookie } });
     return { status: res.status, headers: res.headers, buf: Buffer.from(await res.arrayBuffer()) };
   };
   const mkVar = async (n, extra) => (await call('POST', `${API}/variables`, { ...base, address: 20, enabled: false, name: n, ...extra })).json.id;
@@ -276,6 +294,54 @@ async function main() {
   check('mesures conservées après restart', Number(sql('SELECT COUNT(*) FROM prod.measures')) >= nMeas);
   r = await call('GET', `${NGINX}/health`);
   check('nginx 200 après restart', r.status === 200);
+
+  // J5 : authentification, rôles, comptes
+  const anon = async (method, url, body) => {
+    const res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+    return res.status;
+  };
+  check('GET /plcs sans session -> 401', (await anon('GET', `${API}/plcs`)) === 401);
+  check('GET /plcs sans session via nginx -> 401', (await anon('GET', `${NGINX}/plcs`)) === 401);
+  check('GET /export.csv sans session -> 401', (await anon('GET', `${API}/export.csv`)) === 401);
+  check('health reste public', (await anon('GET', `${API}/health`)) === 200);
+  check('login mauvais mot de passe -> 401', (await anon('POST', `${API}/auth/login`, { username: 'admin', password: 'wrong-password-x' })) === 401);
+  r = await call('GET', `${API}/auth/me`);
+  check('GET /auth/me admin', r.status === 200 && r.json.role === 'admin' && !JSON.stringify(r.json).includes('password'), JSON.stringify(r));
+  const uname = `e2e-viewer-${Date.now()}`;
+  r = await call('POST', `${API}/users`, { username: uname, password: 'viewer-password-1', role: 'viewer' });
+  check('POST /users 201 sans hash', r.status === 201 && !JSON.stringify(r.json).includes('password'), JSON.stringify(r));
+  const uid = r.json && r.json.id;
+  const adminCookie = cookie;
+  const lg = await fetch(`${API}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: uname, password: 'viewer-password-1' }) });
+  cookie = (lg.headers.getSetCookie()[0] || '').split(';')[0];
+  const viewerCookie = cookie;
+  check('login viewer 200', lg.status === 200);
+  check('viewer GET /plcs 200', (await call('GET', `${API}/plcs`)).status === 200);
+  check('viewer POST /plcs -> 403', (await call('POST', `${API}/plcs`, { name: 'e2e-x', host: 'simulator' })).status === 403);
+  check('viewer PATCH variable -> 403', (await call('PATCH', `${API}/variables/1`, { enabled: true })).status === 403);
+  check('viewer GET /users -> 403', (await call('GET', `${API}/users`)).status === 403);
+  cookie = adminCookie;
+  r = await call('PATCH', `${API}/variables/1`, { frequency_s: 1 });
+  check('admin PATCH variable 200', r.status === 200, JSON.stringify(r));
+  check('PATCH champ interdit -> 400', (await call('PATCH', `${API}/variables/1`, { address: 3 })).status === 400);
+  r = await call('GET', `${API}/users`);
+  const me = (await call('GET', `${API}/auth/me`)).json;
+  check('DELETE soi-même -> 409', (await call('DELETE', `${API}/users/${me.id}`)).status === 409);
+  check('rétrograder le dernier admin -> 409', (r.json.filter((u) => u.role === 'admin').length > 1) || (await call('PUT', `${API}/users/${me.id}`, { role: 'viewer' })).status === 409);
+  check('PUT role révoque les sessions du compte',
+    (await call('PUT', `${API}/users/${uid}`, { role: 'technician' })).status === 200
+    && (await fetch(`${API}/auth/me`, { headers: { Cookie: viewerCookie } })).status === 401);
+  check('DELETE /users/:id 204', (await call('DELETE', `${API}/users/${uid}`)).status === 204);
+  r = await call('POST', `${API}/teams`, { name: `e2e-team-${Date.now()}` });
+  check('POST /teams 201', r.status === 201, JSON.stringify(r));
+  check('DELETE /teams/:id 204', (await call('DELETE', `${API}/teams/${r.json.id}`)).status === 204);
+  check('POST form-urlencoded -> 415 (CSRF)', (await fetch(`${API}/teams`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie }, body: 'name=x' })).status === 415);
+  check('Origin étrangère -> 403 (CSRF)', (await fetch(`${API}/teams`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'http://evil.example' }, body: '{"name":"x"}' })).status === 403);
+  check('sessions stockées hashées (aucune ne vaut le jeton)', sql(`SELECT COUNT(*) FROM app.sessions WHERE id = '${cookie.slice(4)}'`) === '0');
+  const logout = await call('POST', `${API}/auth/logout`);
+  check('logout 204', logout.status === 204);
+  check('session révoquée après logout -> 401', (await call('GET', `${API}/plcs`)).status === 401);
+  await login();
 
   // Nettoyage des données de test (le compte root seul peut supprimer des mesures)
   const mine = "SELECT id FROM config.variables WHERE name LIKE '%e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE '%e2e-%')";

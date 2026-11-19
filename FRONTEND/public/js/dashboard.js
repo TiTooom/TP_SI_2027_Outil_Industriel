@@ -255,5 +255,5 @@ window.addEventListener('pagehide', () => {
   for (const id of [...cards.keys()]) removeCard(id);
 });
 
-mountNav();
+await mountNav();
 start();

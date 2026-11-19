@@ -94,3 +94,15 @@ CREATE TABLE IF NOT EXISTS app.dashboards (
   -- Un dashboard appartient soit à un utilisateur (mode perso), soit à une équipe (mode équipe).
   CONSTRAINT ck_dashboards_owner CHECK ((owner_user_id IS NULL) <> (owner_team_id IS NULL))
 ) ENGINE=InnoDB;
+
+-- Sessions d'authentification : `id` = SHA-256 hex du jeton (le jeton en clair n'est jamais stocké). Dates en UTC.
+CREATE TABLE IF NOT EXISTS app.sessions (
+  id           CHAR(64)     NOT NULL PRIMARY KEY,
+  user_id      INT UNSIGNED NOT NULL,
+  created_at   DATETIME(3)  NOT NULL,
+  last_seen_at DATETIME(3)  NOT NULL,
+  expires_at   DATETIME(3)  NOT NULL,
+  INDEX idx_sessions_user (user_id),
+  INDEX idx_sessions_expires (expires_at),
+  CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES app.users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

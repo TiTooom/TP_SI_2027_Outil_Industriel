@@ -70,6 +70,16 @@ async function update(id, v) {
   return findById(id);
 }
 
+// Mise à jour partielle (exploitation) : enabled et/ou frequency_s uniquement.
+async function patch(id, { enabled, frequency_s: frequencyS }) {
+  const sets = [];
+  const params = [];
+  if (enabled !== undefined) { sets.push('enabled = ?'); params.push(enabled); }
+  if (frequencyS !== undefined) { sets.push('frequency_s = ?'); params.push(frequencyS); }
+  await apiPool.query(`UPDATE config.variables SET ${sets.join(', ')} WHERE id = ? AND deleted_at IS NULL`, [...params, id]);
+  return findById(id);
+}
+
 // Suppression logique. Le nom reste réutilisable : l'unicité en base (active_key) ne couvre que les lignes actives.
 async function softDelete(id) {
   const [result] = await apiPool.query(
@@ -84,4 +94,4 @@ async function count() {
   return Number(rows[0].n);
 }
 
-module.exports = { list, findById, findByIdIncludingDeleted, findManyIncludingDeleted, create, update, softDelete, count };
+module.exports = { list, findById, findByIdIncludingDeleted, findManyIncludingDeleted, create, update, patch, softDelete, count };

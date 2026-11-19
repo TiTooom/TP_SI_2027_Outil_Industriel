@@ -65,4 +65,4 @@ function parseId(raw) {
   return /^[1-9]\d{0,9}$/.test(raw) ? Number(raw) : null;
 }
 
-module.exports = { str, int, num, bool, oneOf, collect, parseId };
+module.exports = { str, int, num, bool, oneOf, collect, parseId, isPlainObject };

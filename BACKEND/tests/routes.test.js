@@ -8,6 +8,9 @@ Object.assign(process.env, {
 });
 const { listenOnSafePort } = require('./helpers/listen');
 const { createApp } = require('../src/app');
+const { authDeps, installAuthFetch } = require('./helpers/fakeAuth');
+
+installAuthFetch('admin');
 
 const plc = { id: 1, name: 'Sim', host: 'simulator', port: 5020, unit_id: 1, enabled: true, variable_count: 0 };
 let calls;
@@ -41,7 +44,7 @@ beforeEach(() => {
     getPlcState: () => ({ state: 'online', last_error: null, last_success_at: 'T', last_attempt_at: 'T' }),
   };
   server.removeAllListeners('request');
-  server.on('request', createApp({ plcRepo, variableRepo, poller }));
+  server.on('request', createApp({ plcRepo, variableRepo, poller, ...authDeps() }));
 });
 
 before(async () => {

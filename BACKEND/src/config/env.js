@@ -55,6 +55,10 @@ const env = Object.freeze({
   exportMaxRows: positiveInt('EXPORT_MAX_ROWS', 500000),
   exportTimeoutS: positiveInt('EXPORT_TIMEOUT_S', 300),
   modbusTimeoutMs: positiveInt('MODBUS_TIMEOUT_MS', 3000),
+  sessionIdleHours: positiveInt('SESSION_IDLE_HOURS', 8),
+  sessionMaxHours: positiveInt('SESSION_MAX_HOURS', 24),
+  // Amorçage du premier compte admin : le mot de passe n'a volontairement aucun défaut.
+  admin: Object.freeze({ username: process.env.ADMIN_USERNAME || 'admin', password: process.env.ADMIN_PASSWORD || '' }),
   db: Object.freeze({
     host: process.env.DB_HOST || 'localhost',
     port: port('DB_PORT', 3306),

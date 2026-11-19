@@ -5,6 +5,13 @@ const healthRouter = require('./routes/health');
 const { createPlcsRouter } = require('./routes/plcs');
 const { createExportRouter } = require('./routes/export');
 const { createVariablesRouter } = require('./routes/variables');
+const { createAuthRouter } = require('./routes/auth');
+const { createUsersRouter } = require('./routes/users');
+const { createTeamsRouter } = require('./routes/teams');
+const { createAuthenticate } = require('./middleware/authenticate');
+const { requireRole, requireRoleByMethod } = require('./middleware/requireRole');
+const { csrfGuard } = require('./middleware/csrf');
+const { createLoginThrottle } = require('./services/loginThrottle');
 
 // Les dépendances par défaut sont chargées à la demande : les tests injectent des mocks
 // sans ouvrir de pool SQL.
@@ -14,6 +21,10 @@ function defaultDeps() {
     variableRepo: require('./repositories/variableRepository'),
     measureRepo: require('./repositories/measureRepository'),
     poller: require('./jobs/pollerInstance'),
+    userRepo: require('./repositories/userRepository'),
+    teamRepo: require('./repositories/teamRepository'),
+    sessionService: require('./services/sessionInstance'),
+    throttle: createLoginThrottle(),
   };
 }
 
@@ -21,23 +32,38 @@ function createApp(deps = defaultDeps()) {
   const app = express();
 
   app.disable('x-powered-by');
+  // Un seul proxy (nginx) : il écrase X-Forwarded-For, donc un client ne peut pas forger son IP.
+  app.set('trust proxy', 1);
+  app.use('/api', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
+  app.use(csrfGuard);
   app.use(express.json({ limit: '100kb' }));
 
   // CORS uniquement si une origine est explicitement autorisée (sinon même origine via nginx).
   if (env.corsOrigin) {
     app.use((req, res, next) => {
       res.set('Access-Control-Allow-Origin', env.corsOrigin);
-      res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE');
+      res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE');
       res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.set('Access-Control-Allow-Credentials', 'true');
       if (req.method === 'OPTIONS') return res.sendStatus(204);
       next();
     });
   }
 
   app.use('/api/health', healthRouter);
-  app.use('/api/plcs', createPlcsRouter(deps));
-  app.use('/api/variables', createVariablesRouter(deps));
-  app.use('/api/export.csv', createExportRouter(deps));
+  // Matrice des droits (docs/CONTRACTS.md) : tout sauf /health et /auth/login exige une session.
+  const authenticate = createAuthenticate(deps.sessionService);
+  const admin = [authenticate, requireRole('admin')];
+  app.use('/api/auth', createAuthRouter(deps));
+  app.use('/api/plcs', authenticate, requireRoleByMethod({ GET: 'viewer' }, 'engineer'), createPlcsRouter(deps));
+  app.use('/api/variables', authenticate,
+    requireRoleByMethod({ GET: 'viewer', PATCH: 'technician' }, 'engineer'), createVariablesRouter(deps));
+  app.use('/api/export.csv', authenticate, requireRoleByMethod({ GET: 'viewer' }, 'engineer'), createExportRouter(deps));
+  app.use('/api/users', ...admin, createUsersRouter(deps));
+  app.use('/api/teams', ...admin, createTeamsRouter(deps));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 

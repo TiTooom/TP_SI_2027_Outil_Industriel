@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion — Supervision Process</title>
+  <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="login-wrap">
+    <form class="login-card" id="login-form" novalidate>
+      <h1 class="h4 mb-1">Supervision Process</h1>
+      <p class="text-secondary mb-4">Connexion à l'interface de supervision</p>
+      <div class="alert alert-danger" id="login-error" role="alert" hidden></div>
+      <div class="mb-3">
+        <label class="form-label" for="username">Identifiant</label>
+        <input class="form-control" id="username" name="username" autocomplete="username" maxlength="50" required autofocus>
+      </div>
+      <div class="mb-4">
+        <label class="form-label" for="password">Mot de passe</label>
+        <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+      </div>
+      <button class="btn btn-primary w-100" type="submit" id="login-submit">Se connecter</button>
+      <p class="role-note mt-3 mb-0">Les comptes sont créés par un administrateur.</p>
+    </form>
+  </main>
+  <script type="module" src="js/login.js"></script>
+</body>
+</html>

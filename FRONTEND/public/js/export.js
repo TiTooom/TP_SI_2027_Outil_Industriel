@@ -280,7 +280,7 @@ async function onPreview() {
 
 // --- Démarrage ---------------------------------------------------------------
 
-mountNav();
+await mountNav();
 setShortcut(24);
 document.querySelectorAll('[data-hours]').forEach((b) => b.addEventListener('click', () => setShortcut(Number(b.dataset.hours))));
 $('select-all').addEventListener('click', () => setAllChecked(true));

@@ -1,4 +1,4 @@
-const { str, int, num, bool, oneOf, collect } = require('./common');
+const { str, int, num, bool, oneOf, collect, isPlainObject } = require('./common');
 
 const REGISTER_TYPES = ['holding', 'input', 'coil', 'discrete'];
 const DATA_TYPES = ['int16', 'uint16', 'int32', 'uint32', 'float32', 'bool'];
@@ -24,4 +24,23 @@ function validateVariable(body) {
   return result;
 }
 
-module.exports = { validateVariable, REGISTER_TYPES, DATA_TYPES };
+// PATCH (rôle technician) : uniquement l'exploitation, jamais la topologie.
+function validateVariablePatch(body) {
+  if (!isPlainObject(body)) return { error: 'Request body must be a JSON object' };
+  const unknown = Object.keys(body).find((k) => k !== 'enabled' && k !== 'frequency_s');
+  if (unknown) return { error: `Unknown field: ${unknown}` };
+  if (body.enabled === undefined && body.frequency_s === undefined) return { error: 'enabled or frequency_s is required' };
+  const value = {};
+  if (body.enabled !== undefined) {
+    if (typeof body.enabled !== 'boolean') return { error: 'enabled must be a boolean' };
+    value.enabled = body.enabled;
+  }
+  if (body.frequency_s !== undefined) {
+    const r = int(body, 'frequency_s', { min: 1, max: 86400, required: true });
+    if (r.error) return r;
+    value.frequency_s = r.value;
+  }
+  return { value };
+}
+
+module.exports = { validateVariablePatch, validateVariable, REGISTER_TYPES, DATA_TYPES };

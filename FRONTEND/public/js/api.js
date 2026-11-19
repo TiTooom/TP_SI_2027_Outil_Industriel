@@ -4,8 +4,9 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 export class ApiError extends Error {
   // status = 0 : backend injoignable ou délai dépassé
-  constructor(message, status = 0) {
+  constructor(message, status = 0, retryAfter = null) {
     super(message);
+    this.retryAfter = retryAfter;
     this.name = 'ApiError';
     this.status = status;
   }
@@ -15,7 +16,18 @@ export class ApiError extends Error {
 let clockOffsetMs = 0;
 export const serverNow = () => Date.now() + clockOffsetMs;
 
-async function request(path, { method = 'GET', body, timeout = DEFAULT_TIMEOUT_MS } = {}) {
+// Pages de l'application (hors login) ; sert aussi à valider le paramètre « next » (pas de redirection ouverte).
+export const KNOWN_PAGES = ['index.html', 'config.html', 'export.html', 'admin.html'];
+
+// Session expirée ou absente : retour au login en mémorisant la page demandée.
+function redirectToLogin() {
+  const page = location.pathname.split('/').pop() || 'index.html';
+  const next = KNOWN_PAGES.includes(page) ? `?next=${encodeURIComponent(page)}` : '';
+  location.replace(`login.html${next}`);
+}
+
+// noRedirect : le login lui-même répond 401 sur identifiants erronés, sans quitter la page.
+async function request(path, { method = 'GET', body, timeout = DEFAULT_TIMEOUT_MS, noRedirect = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
@@ -28,9 +40,10 @@ async function request(path, { method = 'GET', body, timeout = DEFAULT_TIMEOUT_M
     });
     const serverDate = Date.parse(res.headers.get('Date') ?? '');
     if (!Number.isNaN(serverDate)) clockOffsetMs = serverDate - Date.now();
+    if (res.status === 401 && !noRedirect) redirectToLogin();
     if (res.status === 204) return null;
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(data?.error ?? `Erreur serveur (HTTP ${res.status})`, res.status);
+    if (!res.ok) throw new ApiError(data?.error ?? `Erreur serveur (HTTP ${res.status})`, res.status, res.headers.get('Retry-After'));
     return data;
   } catch (err) {
     if (err instanceof ApiError) throw err;
@@ -60,6 +73,24 @@ export const api = {
   deleteVariable: (id) => request(`/variables/${id}`, { method: 'DELETE' }),
   latestAll: () => request('/variables/latest'),
   listVariablesWithDeleted: () => request('/variables?include_deleted=1'),
+  patchVariable: (id, fields) => request(`/variables/${id}`, { method: 'PATCH', body: fields }),
+  login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password }, noRedirect: true }),
+  logout: () => request('/auth/logout', { method: 'POST', noRedirect: true }),
+  me: () => request('/auth/me'),
+  meQuiet: () => request('/auth/me', { noRedirect: true }), // sonde de session sans redirection (page de login)
+  changePassword: (current_password, new_password) => request('/auth/password', { method: 'POST', body: { current_password, new_password } }),
+  listUsers: () => request('/users'),
+  createUser: (u) => request('/users', { method: 'POST', body: u }),
+  updateUser: (id, u) => request(`/users/${id}`, { method: 'PUT', body: u }),
+  resetPassword: (id, new_password) => request(`/users/${id}/password`, { method: 'PUT', body: { new_password } }),
+  deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+  listTeams: () => request('/teams'),
+  getTeam: (id) => request(`/teams/${id}`),
+  createTeam: (name) => request('/teams', { method: 'POST', body: { name } }),
+  renameTeam: (id, name) => request(`/teams/${id}`, { method: 'PUT', body: { name } }),
+  deleteTeam: (id) => request(`/teams/${id}`, { method: 'DELETE' }),
+  addMember: (teamId, userId) => request(`/teams/${teamId}/members/${userId}`, { method: 'PUT' }),
+  removeMember: (teamId, userId) => request(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
   measures: (id, { from, to, limit }) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (from) qs.set('from', from);

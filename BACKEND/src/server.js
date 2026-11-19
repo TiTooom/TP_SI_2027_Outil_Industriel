@@ -2,6 +2,9 @@ const { createApp } = require('./app');
 const env = require('./config/env');
 const poller = require('./jobs/pollerInstance');
 const { closePools } = require('./db/pools');
+const { bootstrapAdmin } = require('./services/bootstrapAdmin');
+const sessionService = require('./services/sessionInstance');
+const userRepo = require('./repositories/userRepository');
 
 // 0.0.0.0 : joignable depuis les autres conteneurs et le réseau local.
 const server = createApp().listen(env.port, '0.0.0.0', () => {
@@ -11,6 +14,10 @@ const server = createApp().listen(env.port, '0.0.0.0', () => {
 // Le relevé démarre en tâche de fond : une BDD indisponible ne bloque pas l'API (nouvel essai périodique).
 poller.start();
 
+// Comptes : amorçage du premier admin puis purge périodique des sessions expirées.
+bootstrapAdmin({ userRepo, username: env.admin.username, password: env.admin.password });
+const stopPurge = sessionService.startPurgeJob();
+
 // Arrêt propre (docker stop envoie SIGTERM).
 let shuttingDown = false;
 async function shutdown(signal) {
@@ -19,6 +26,7 @@ async function shutdown(signal) {
   console.log(`${signal} received, shutting down`);
   setTimeout(() => process.exit(1), 10000).unref();
   server.close(async () => {
+    stopPurge();
     await poller.stop();
     await closePools();
     process.exit(0);

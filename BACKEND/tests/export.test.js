@@ -10,6 +10,9 @@ Object.assign(process.env, {
 });
 const { listenOnSafePort } = require('./helpers/listen');
 const { createApp } = require('../src/app');
+const { authDeps, installAuthFetch } = require('./helpers/fakeAuth');
+
+installAuthFetch('admin');
 const { textCell, numberCell } = require('../src/services/csvWriter');
 const exportService = require('../src/services/exportService');
 const { filenameFor } = exportService;
@@ -30,7 +33,7 @@ const RANGE = 'from=2026-11-19T10:00:00Z&to=2026-11-19T11:00:00Z';
 
 function install(measureRepo, variableRepo) {
   server.removeAllListeners('request');
-  server.on('request', createApp({ plcRepo: {}, variableRepo, measureRepo, poller: {} }));
+  server.on('request', createApp({ plcRepo: {}, variableRepo, measureRepo, poller: {}, ...authDeps() }));
 }
 
 beforeEach(() => {

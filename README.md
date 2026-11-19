@@ -99,7 +99,7 @@ ou d’autres services.
 
 Cette application relève périodiquement des valeurs (température, pression…) sur des automates. Un automate est un petit calculateur industriel qui pilote une machine. Le relevé se fait en Modbus TCP, le protocole standard qui permet de lire les registres (cases numérotées) d'un automate sur le réseau. Les valeurs sont enregistrées avec leur date et leur heure dans MariaDB, puis affichées en graphiques dans le navigateur.
 
-Avancement : la configuration, le relevé, le tableau de bord temps réel et l'export CSV sont faits. Les comptes (jalon 5) ne sont pas encore faits.
+Avancement : la configuration, le relevé, le tableau de bord temps réel et l'export CSV sont faits. Les comptes, les rôles et les équipes (jalon 5) sont faits et testés en Docker. Le tableau de bord configurable (jalon 6) n'est pas commencé.
 
 ## Schéma
 
@@ -124,11 +124,26 @@ Remplacer les mots de passe dans `.env` avant le premier lancement. Puis ouvrir 
 
 Pour repartir de zéro : `docker compose down -v` (cela efface toutes les données).
 
+## Première connexion
+
+Au premier démarrage, un compte administrateur est créé avec `ADMIN_USERNAME` et `ADMIN_PASSWORD` (dans `.env`). Se connecter, puis changer ce mot de passe dans « Mon compte ». Si la base existait avant l'ajout des comptes, lancer une fois `docker compose down -v` : la table des sessions n'est créée que sur une base vide (cela efface les données).
+
 ## Utiliser l'application
 
 1. **Configuration** : ajouter un automate (adresse IP, port, unit ID), puis les variables à surveiller (registre, adresse, type, fréquence). Un automate « Simulateur » et quatre variables de démonstration sont déjà présents au premier lancement.
 2. **Tableau de bord** : une carte et un graphique par variable, mis à jour automatiquement. Si un automate ne répond plus, son état est signalé sur les cartes de ses variables.
 3. **Export CSV** : page « Export ». Choisir le début et la fin de la plage (ou un raccourci : 1 h, 24 h, 7 j), cocher les variables, puis cliquer sur « Télécharger CSV ». Le fichier sépare les colonnes par un point-virgule et utilise la virgule pour les décimales : il s'ouvre directement dans Excel en français. Une plage ne peut pas dépasser 31 jours, et un export est limité à 500 000 lignes (l'application le signale avant le téléchargement). L'aperçu graphique de la page Export est indicatif : il ne montre que les 7 derniers jours de la plage.
+
+### Comptes et rôles
+
+| Rôle | Peut faire |
+|---|---|
+| viewer | Voir le tableau de bord, la configuration et exporter en CSV |
+| technician | Activer ou désactiver une variable, changer sa fréquence |
+| engineer | Ajouter, modifier, supprimer automates et variables |
+| admin | Gérer les comptes et les équipes |
+
+Chaque rôle garde les droits du rôle précédent. Les droits sont vérifiés côté serveur.
 
 ## Accès depuis un autre PC du réseau
 
@@ -153,7 +168,7 @@ docker-compose.yml, .env.example
 - **Frontend** : HTML, CSS et JavaScript sans framework, Bootstrap et Chart.js. Les bibliothèques sont copiées dans le projet, car le réseau d'une usine n'a pas forcément accès à Internet.
 - **Déploiement** : Docker Compose avec nginx (serveur web et relais vers l'API).
 
-Mise en garde : l'API n'a pas encore d'authentification (prévue au jalon 5). Toute personne du réseau qui accède au port 3000 peut modifier la configuration.
+Sécurité : l'API du port 3000 est protégée comme le site. Il faut une session (connexion) pour l'utiliser, sauf pour la page d'état `/api/health` et la connexion elle-même.
 
 ## Aperçu
 

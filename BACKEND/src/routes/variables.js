@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const asyncHandler = require('./asyncHandler');
-const { validateVariable } = require('../validation/variable');
+const { validateVariable, validateVariablePatch } = require('../validation/variable');
 const { parseId } = require('../validation/common');
 const { validateMeasuresQuery } = require('../validation/measures');
 const { roundValue } = require('../services/roundValue');
@@ -102,6 +102,18 @@ function createVariablesRouter({ variableRepo, plcRepo, measureRepo, poller }) {
       if (isDuplicate(err)) return res.status(409).json({ error: DUPLICATE });
       throw err;
     }
+  }));
+
+  // Exploitation (technician) : activer/désactiver une mesure et changer sa fréquence, rien d'autre.
+  router.patch('/:id', asyncHandler(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const { value, error } = validateVariablePatch(req.body);
+    if (error) return res.status(400).json({ error });
+    const updated = await variableRepo.patch(id, value);
+    if (!updated) return res.status(404).json({ error: 'Variable not found' });
+    await poller.syncVariable(id);
+    res.json(updated);
   }));
 
   // Suppression logique : l'historique des mesures est conservé.

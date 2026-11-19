@@ -202,7 +202,20 @@ Les captures de la page d'accueil (base connectée puis base coupée) sont prés
 
 **Accès depuis un autre poste du réseau.** Pour l'instant, nous n'avons testé l'accès que depuis la machine hôte, en utilisant son adresse IP du réseau local. Le profil réseau Windows était en mode « Public », ce qui bloque les connexions entrantes. Il faut le passer en « Privé » ou adapter la règle du pare-feu pour les ports 8080 et 3000. Ce test reste à faire.
 
-### 5.2 Ce qui n'est pas encore fait
+### 5.2 Jalon J5 : comptes, rôles et équipes
+
+Ces fonctionnalités sont écrites. Elles attendent encore leur test de démonstration.
+
+- **Connexion par session** : nom d'utilisateur et mot de passe, puis un cookie de session. La session expire après 8 h sans activité et 24 h au maximum (valeurs réglables dans `.env`).
+- **Anti brute-force** : après plusieurs échecs, la connexion est bloquée pendant 15 minutes pour ce couple IP et nom d'utilisateur.
+- **Premier administrateur** : créé au démarrage à partir de `ADMIN_USERNAME` et `ADMIN_PASSWORD`, si la base ne contient aucun compte.
+- **Mon compte** : chacun peut changer son mot de passe.
+- **Quatre rôles** (lecteur, technicien, ingénieur, administrateur), vérifiés par le backend sur chaque route. Les boutons du site sont aussi masqués selon le rôle.
+- **Page Administration** (administrateur seul) : créer, supprimer un compte, changer son rôle, réinitialiser son mot de passe.
+- **Équipes** : créer, renommer, supprimer une équipe, ajouter ou retirer des membres. Les équipes ne servent pas encore au tableau de bord : ce sera le rôle du jalon J6.
+- **API protégée** : toutes les routes de l'API, y compris celles du port 3000 publié sur le réseau, exigent une session, sauf la connexion et `/api/health`.
+
+### 5.3 Ce qui n'est pas encore fait
 
 Les fonctionnalités suivantes sont prévues. Elles ne sont **pas** réalisées à ce jour.
 

@@ -1,9 +1,10 @@
 // Page Configuration : CRUD des automates et des variables, état de connexion des automates.
 import { api } from './api.js';
-import { mountNav } from './nav.js';
+import { mountNav, hasRole } from './nav.js';
 import { badge, el } from './dom.js';
 import { formatValue } from './format.js';
 import { validatePlc, validateVariable } from './validate.js';
+import { errorMessage } from './messages.js';
 
 const STATUS_REFRESH_MS = 5000;
 const $ = (id) => document.getElementById(id);
@@ -11,6 +12,9 @@ const $ = (id) => document.getElementById(id);
 let plcs = [];
 let variables = [];
 let statuses = new Map();
+// Droits d'affichage (le serveur applique la vraie règle) : engineer+ modifie, technician pilote les variables.
+let canEdit = false;
+let canOperate = false;
 
 // --- Messages ----------------------------------------------------------------
 
@@ -37,6 +41,7 @@ function plcStateKey(plc) {
 }
 
 function actionButtons(onEdit, onDelete, label) {
+  if (!canEdit) return el('td');
   const edit = el('button', { className: 'btn btn-outline-light btn-sm', text: 'Modifier', attrs: { type: 'button', 'aria-label': `Modifier ${label}` } });
   const del = el('button', { className: 'btn btn-outline-danger btn-sm', text: 'Supprimer', attrs: { type: 'button', 'aria-label': `Supprimer ${label}` } });
   edit.addEventListener('click', onEdit);
@@ -46,6 +51,44 @@ function actionButtons(onEdit, onDelete, label) {
 
 function yesNo(flag) {
   return el('span', { className: flag ? 'text-success' : 'text-secondary', text: flag ? 'Oui' : 'Non' });
+}
+
+// Technicien : activation et fréquence modifiables sur place via PATCH.
+async function patchVariable(variable, fields, okMessage) {
+  try {
+    await api.patchVariable(variable.id, fields);
+    flash('ok', okMessage);
+  } catch (err) {
+    flash('error', errorMessage(err));
+  }
+  await loadAll();
+}
+
+function enabledSwitch(v) {
+  const input = el('input', { className: 'form-check-input', attrs: { type: 'checkbox', role: 'switch', 'aria-label': `Activer ${v.name}` } });
+  input.checked = v.enabled;
+  input.addEventListener('change', () => {
+    input.disabled = true;
+    patchVariable(v, { enabled: input.checked }, input.checked ? 'Variable activée.' : 'Variable désactivée.');
+  });
+  return el('div', { className: 'form-check form-switch mb-0' }, [input]);
+}
+
+function frequencyEditor(v) {
+  const input = el('input', { className: 'form-control form-control-sm freq-input', attrs: { type: 'number', min: '1', max: '86400', 'aria-label': `Fréquence de ${v.name} en secondes` } });
+  input.value = v.frequency_s;
+  const save = el('button', { className: 'btn btn-outline-light btn-sm', text: 'OK', attrs: { type: 'button', 'aria-label': `Enregistrer la fréquence de ${v.name}` } });
+  save.addEventListener('click', () => {
+    const n = Number(input.value);
+    if (!Number.isInteger(n) || n < 1 || n > 86400) {
+      input.classList.add('is-invalid');
+      flash('error', 'Fréquence : entier entre 1 et 86400 secondes.');
+      return;
+    }
+    save.disabled = true;
+    patchVariable(v, { frequency_s: n }, 'Fréquence modifiée.');
+  });
+  return el('div', { className: 'd-flex gap-2 align-items-center' }, [input, el('span', { text: 's' }), save]);
 }
 
 function renderPlcs() {
@@ -78,8 +121,8 @@ function renderVariables() {
     el('td', { text: v.data_type }),
     el('td', { text: `× ${String(v.scale)} / ${formatValue(v.value_offset)}` }),
     el('td', { text: v.unit || '—' }),
-    el('td', { text: `${v.frequency_s} s` }),
-    el('td', {}, [yesNo(v.enabled)]),
+    el('td', canOperate && !canEdit ? {} : { text: `${v.frequency_s} s` }, canOperate && !canEdit ? [frequencyEditor(v)] : []),
+    el('td', {}, [canOperate && !canEdit ? enabledSwitch(v) : yesNo(v.enabled)]),
     actionButtons(() => openVarForm(v), () => confirmDeleteVar(v), v.name),
   ]));
   $('var-rows').replaceChildren(...rows);
@@ -87,6 +130,7 @@ function renderVariables() {
   state.hidden = variables.length > 0;
   state.textContent = plcs.length ? 'Aucune variable. Ajoutez-en une pour la voir sur le tableau de bord.' : "Créez d'abord un automate.";
   $('var-add').disabled = plcs.length === 0;
+  $('var-add').hidden = !canEdit;
 }
 
 // --- Chargement --------------------------------------------------------------
@@ -166,7 +210,7 @@ async function submitForm({ form, errorId, validator, save, dialog, doneMessage 
     flash('ok', doneMessage);
     await loadAll();
   } catch (err) {
-    setFormError(errorId, err.message);
+    setFormError(errorId, errorMessage(err));
   } finally {
     button.disabled = false;
   }
@@ -262,7 +306,7 @@ function confirmDelete(text, action, doneMessage) {
       await loadAll();
     } catch (err) {
       // 409 : automate avec variables, etc. Le message serveur est affiché tel quel.
-      flash('error', err.status === 409 ? `Suppression impossible : ${err.message}` : err.message);
+      flash('error', err.status === 409 ? `Suppression impossible : ${err.message}` : errorMessage(err));
     }
   }, { once: true });
   dialog.showModal();
@@ -284,6 +328,13 @@ function confirmDeleteVar(variable) {
 
 // --- Démarrage ---------------------------------------------------------------
 
-mountNav();
+const user = await mountNav();
+canEdit = hasRole(user, 'engineer');
+canOperate = hasRole(user, 'technician');
+$('plc-add').hidden = !canEdit;
+$('role-note').hidden = canEdit;
+$('role-note').textContent = canOperate
+  ? 'Mode exploitation : vous pouvez activer/désactiver une variable et modifier sa fréquence.'
+  : 'Mode lecture seule.';
 loadAll();
 setInterval(refreshStatus, STATUS_REFRESH_MS);
