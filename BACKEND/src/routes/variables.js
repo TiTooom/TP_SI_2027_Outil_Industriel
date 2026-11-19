@@ -2,6 +2,7 @@ const { Router } = require('express');
 const asyncHandler = require('./asyncHandler');
 const { validateVariable } = require('../validation/variable');
 const { parseId } = require('../validation/common');
+const { validateMeasuresQuery } = require('../validation/measures');
 
 const { isDuplicate } = require('./dbErrors');
 const { MAX_VARIABLES } = require('../config/limits');
@@ -9,7 +10,7 @@ const DUPLICATE = 'A variable with this name already exists on this PLC';
 const BAD_PLC = 'plc_id does not match an existing PLC';
 
 // Dépendances injectées : repositories et service de relevé.
-function createVariablesRouter({ variableRepo, plcRepo, poller }) {
+function createVariablesRouter({ variableRepo, plcRepo, measureRepo, poller }) {
   const router = Router();
 
   router.get('/', asyncHandler(async (req, res) => {
@@ -36,6 +37,36 @@ function createVariablesRouter({ variableRepo, plcRepo, poller }) {
       if (isDuplicate(err)) return res.status(409).json({ error: DUPLICATE });
       throw err;
     }
+  }));
+
+  // Doit rester déclarée avant '/:id', sinon « latest » serait pris pour un identifiant.
+  router.get('/latest', asyncHandler(async (req, res) => {
+    res.json(await measureRepo.findLatestOfActiveVariables());
+  }));
+
+  router.get('/:id/latest', asyncHandler(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    if (!(await variableRepo.findById(id))) return res.status(404).json({ error: 'Variable not found' });
+    const measure = await measureRepo.findLatest(id);
+    if (!measure) return res.status(404).json({ error: 'No measure yet' });
+    res.json(measure);
+  }));
+
+  router.get('/:id/measures', asyncHandler(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+    const { value, error } = validateMeasuresQuery(req.query);
+    if (error) return res.status(400).json({ error });
+    if (!(await variableRepo.findById(id))) return res.status(404).json({ error: 'Variable not found' });
+    const measures = await measureRepo.findRange(id, value.from, value.to, value.limit);
+    res.json({
+      variable_id: id,
+      from: value.from.toISOString(),
+      to: value.to.toISOString(),
+      count: measures.length,
+      measures,
+    });
   }));
 
   router.get('/:id', asyncHandler(async (req, res) => {

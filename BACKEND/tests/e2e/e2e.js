@@ -99,6 +99,46 @@ async function main() {
   await bad('DELETE plc avec variables 409', 'DELETE', `${API}/plcs/1`, null, 409);
   await bad('plc doublon 409', 'POST', `${API}/plcs`, { ...plc, name: 'Simulateur' }, 409);
 
+  // J3 : lecture des mesures
+  r = await call('POST', `${API}/variables`, { ...base, name: `e2e-j3-${Date.now()}` });
+  const jid = r.json && r.json.id;
+  r = await call('GET', `${API}/variables/${jid}/latest`);
+  // Le poller lit dès la création : la 1re mesure peut déjà exister (course), les deux issues sont valides.
+  check('latest juste après création -> 404 No measure yet ou 200',
+    (r.status === 404 && r.json.error === 'No measure yet') || (r.status === 200 && r.json.quality === 'good'), JSON.stringify(r));
+  await sleep(4500);
+  const isoMs = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+  r = await call('GET', `${API}/variables/${jid}/latest`);
+  check('latest 200 (ts ISO UTC ms)', r.status === 200 && isoMs.test(r.json.ts) && r.json.quality === 'good', JSON.stringify(r));
+  r = await call('GET', `${API}/variables/latest`);
+  check('latest groupée contient la variable', r.status === 200 && Array.isArray(r.json) && r.json.some((x) => x.variable_id === jid));
+  r = await call('GET', `${NGINX}/variables/latest`);
+  check('latest groupée via nginx', r.status === 200 && Array.isArray(r.json));
+  r = await call('GET', `${API}/variables/${jid}/measures`);
+  const ms = (r.json && r.json.measures) || [];
+  check('measures défaut : count cohérent', r.status === 200 && ms.length >= 3 && r.json.count === ms.length, JSON.stringify(r.json));
+  check('measures triées croissant', ms.every((m, i) => i === 0 || ms[i - 1].ts <= m.ts));
+  // `to` figé : sinon une mesure arrivée entre les deux appels décale la fenêtre.
+  const frozenTo = encodeURIComponent(r.json.to);
+  const full = (await call('GET', `${API}/variables/${jid}/measures?to=${frozenTo}`)).json.measures;
+  r = await call('GET', `${API}/variables/${jid}/measures?to=${frozenTo}&limit=2`);
+  check('measures limit=2 : les 2 plus récentes', r.json.count === 2 && r.json.measures[0].ts === full[full.length - 2].ts);
+  const jbad = async (label, q) => {
+    const x = await call('GET', `${API}/variables/${jid}/measures?${q}`);
+    check(`measures ${label} -> 400`, x.status === 400 && x.json && typeof x.json.error === 'string', `${x.status}`);
+  };
+  await jbad('date impossible', 'from=2026-02-31T10:00:00Z');
+  await jbad('limit 0', 'limit=0');
+  await jbad('limit 5001', 'limit=5001');
+  await jbad('date sans fuseau', 'from=2026-11-19T10:00:00');
+  await jbad('from >= to', 'from=2026-11-19T11:00:00Z&to=2026-11-19T10:00:00Z');
+  await jbad('plage > 7 j', 'from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z');
+  r = await call('GET', `${API}/variables/99999/measures`);
+  check('measures variable inconnue -> 404', r.status === 404);
+  await call('DELETE', `${API}/variables/${jid}`);
+  r = await call('GET', `${API}/variables/latest`);
+  check('variable supprimée absente de latest', Array.isArray(r.json) && !r.json.some((x) => x.variable_id === jid));
+
   // Lecture seule
   const before = count(1);
   for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) {

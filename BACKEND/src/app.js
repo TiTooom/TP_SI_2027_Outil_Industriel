@@ -11,6 +11,7 @@ function defaultDeps() {
   return {
     plcRepo: require('./repositories/plcRepository'),
     variableRepo: require('./repositories/variableRepository'),
+    measureRepo: require('./repositories/measureRepository'),
     poller: require('./jobs/pollerInstance'),
   };
 }

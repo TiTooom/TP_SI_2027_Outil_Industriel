@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration — Supervision Process</title>
+  <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav id="app-nav"></nav>
+
+  <main class="container-xl py-4">
+    <h1 class="h4 mb-3">Configuration</h1>
+    <div class="alert alert-success" id="flash-ok" role="status" hidden></div>
+    <div class="alert alert-danger" id="flash-error" role="alert" hidden></div>
+
+    <!-- Automates -->
+    <section class="panel mb-4" aria-labelledby="plcs-title">
+      <div class="panel-head">
+        <h2 class="h5 mb-0" id="plcs-title">Automates</h2>
+        <button type="button" class="btn btn-primary btn-sm" id="plc-add">Ajouter un automate</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm align-middle mb-0">
+          <thead><tr>
+            <th scope="col">Nom</th><th scope="col">Hôte : port</th><th scope="col">Unit ID</th>
+            <th scope="col">Activé</th><th scope="col">Variables</th><th scope="col">Connexion</th>
+            <th scope="col" class="text-end">Actions</th>
+          </tr></thead>
+          <tbody id="plc-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="plc-state" role="status">Chargement…</p>
+    </section>
+
+    <!-- Variables -->
+    <section class="panel" aria-labelledby="vars-title">
+      <div class="panel-head">
+        <h2 class="h5 mb-0" id="vars-title">Variables</h2>
+        <button type="button" class="btn btn-primary btn-sm" id="var-add">Ajouter une variable</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm align-middle mb-0">
+          <thead><tr>
+            <th scope="col">Nom</th><th scope="col">Automate</th><th scope="col">Registre</th>
+            <th scope="col">Type</th><th scope="col">Échelle / décalage</th><th scope="col">Unité</th>
+            <th scope="col">Fréquence</th><th scope="col">Activée</th>
+            <th scope="col" class="text-end">Actions</th>
+          </tr></thead>
+          <tbody id="var-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="var-state" role="status">Chargement…</p>
+    </section>
+  </main>
+
+  <!-- Formulaire automate -->
+  <dialog id="plc-dialog" aria-labelledby="plc-dialog-title">
+    <form id="plc-form" novalidate>
+      <h2 class="h5" id="plc-dialog-title"></h2>
+      <div class="alert alert-danger" id="plc-error" role="alert" hidden></div>
+      <div class="mb-3">
+        <label class="form-label" for="plc-name">Nom</label>
+        <input class="form-control" id="plc-name" name="name" maxlength="100" required>
+        <div class="invalid-feedback"></div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-8">
+          <label class="form-label" for="plc-host">Hôte (adresse IPv4 ou nom DNS)</label>
+          <input class="form-control" id="plc-host" name="host" maxlength="255" required placeholder="192.168.1.10">
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-4">
+          <label class="form-label" for="plc-port">Port</label>
+          <input class="form-control" id="plc-port" name="port" type="number" value="502" required>
+          <div class="invalid-feedback"></div>
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-6">
+          <label class="form-label" for="plc-unit">Unit ID (0-255)</label>
+          <input class="form-control" id="plc-unit" name="unit_id" type="number" value="1" required>
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-6 d-flex align-items-end">
+          <div class="form-check form-switch">
+            <input class="form-check-input" id="plc-enabled" name="enabled" type="checkbox" checked>
+            <label class="form-check-label" for="plc-enabled">Activé</label>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline-secondary" data-close>Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Formulaire variable -->
+  <dialog id="var-dialog" aria-labelledby="var-dialog-title">
+    <form id="var-form" novalidate>
+      <h2 class="h5" id="var-dialog-title"></h2>
+      <div class="alert alert-danger" id="var-error" role="alert" hidden></div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-7">
+          <label class="form-label" for="var-name">Nom</label>
+          <input class="form-control" id="var-name" name="name" maxlength="100" required>
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label" for="var-plc">Automate</label>
+          <select class="form-select" id="var-plc" name="plc_id" required></select>
+          <div class="invalid-feedback"></div>
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label" for="var-register">Type de registre</label>
+          <select class="form-select" id="var-register" name="register_type">
+            <option value="holding">holding (FC3)</option>
+            <option value="input">input (FC4)</option>
+            <option value="coil">coil (FC1)</option>
+            <option value="discrete">discrete (FC2)</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="var-address">Adresse (0-65535)</label>
+          <input class="form-control" id="var-address" name="address" type="number" value="0" required>
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="var-type">Type de donnée</label>
+          <select class="form-select" id="var-type" name="data_type">
+            <option value="int16">int16</option>
+            <option value="uint16">uint16</option>
+            <option value="int32">int32</option>
+            <option value="uint32">uint32</option>
+            <option value="float32">float32</option>
+            <option value="bool">bool</option>
+          </select>
+          <div class="invalid-feedback"></div>
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
+          <label class="form-label" for="var-scale">Échelle</label>
+          <input class="form-control" id="var-scale" name="scale" type="number" step="any" value="1" required>
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="var-offset">Décalage</label>
+          <input class="form-control" id="var-offset" name="value_offset" type="number" step="any" value="0" required>
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="var-unit">Unité</label>
+          <input class="form-control" id="var-unit" name="unit" maxlength="20">
+          <div class="invalid-feedback"></div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="var-freq">Fréquence (s)</label>
+          <input class="form-control" id="var-freq" name="frequency_s" type="number" value="2" required>
+          <div class="invalid-feedback"></div>
+        </div>
+      </div>
+      <p class="text-secondary small">Valeur affichée = valeur brute × échelle + décalage. Les types 32 bits et float32 utilisent 2 registres consécutifs.</p>
+      <div class="form-check form-switch mb-3">
+        <input class="form-check-input" id="var-enabled" name="enabled" type="checkbox" checked>
+        <label class="form-check-label" for="var-enabled">Activée</label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline-secondary" data-close>Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirmation de suppression -->
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 class="h5" id="confirm-title">Confirmer la suppression</h2>
+      <p id="confirm-text"></p>
+      <div class="dialog-actions">
+        <button type="submit" class="btn btn-outline-secondary" value="cancel">Annuler</button>
+        <button type="submit" class="btn btn-danger" value="confirm">Supprimer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/config.js"></script>
+</body>
+</html>

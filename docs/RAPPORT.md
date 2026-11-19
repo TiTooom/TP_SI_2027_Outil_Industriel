@@ -165,7 +165,7 @@ Les tables `app.*` et `prod.measures` existent, mais l'application ne les rempli
 
 ## 5. Fonctionnalités réalisées
 
-### 5.1 Ce qui fonctionne (jalon J1)
+### 5.1 Ce qui fonctionne (jalons J1 à J3)
 
 | Fonctionnalité | État |
 |---|---|
@@ -178,6 +178,8 @@ Les tables `app.*` et `prod.measures` existent, mais l'application ne les rempli
 | Accès à l'application par nginx (port 8080) et à l'API (port 3000) | Fait, testé depuis la machine hôte |
 | Conservation des données après redémarrage (volume Docker) | Fait, testé |
 | Port de la base non publié sur le réseau | Fait, vérifié |
+| Page « Configuration » : ajouter, modifier et supprimer les automates et les variables depuis le navigateur | Écrit, test de démonstration à faire |
+| Tableau de bord temps réel : un graphique Chart.js par variable active, avec l'état de chaque automate | Écrit, test de démonstration à faire |
 
 Les tests réellement effectués le 19/11 dans Docker sont les suivants :
 

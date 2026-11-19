@@ -9,6 +9,7 @@
   --warn: #d29922;
   --ko: #f85149;
   --unknown: #6e7681;
+  --accent: #4aa3ff;
 }
 
 body {
@@ -50,3 +51,55 @@ body {
 
 .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
 .dot.ko { background: var(--ko); box-shadow: 0 0 8px var(--ko); }
+
+/* --- Navigation et pastilles --- */
+.dot.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.dot.unknown { background: var(--unknown); }
+
+.app-nav { background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: .5rem; }
+.app-nav .nav-link { color: var(--muted); padding: .5rem .25rem; border-bottom: 2px solid transparent; }
+.app-nav .nav-link:hover { color: var(--text); }
+.app-nav .nav-link[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+.app-nav a:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.health-pill { display: inline-flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: .2rem .7rem; }
+
+.state-badge { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.state-badge.ok { color: var(--ok); }
+.state-badge.warn { color: var(--warn); }
+.state-badge.ko { color: var(--ko); }
+.state-badge.unknown { color: var(--muted); }
+
+/* --- Tableau de bord --- */
+.cards-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.var-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; min-width: 0; }
+.var-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
+.var-name { font-size: 1.05rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.var-plc { color: var(--muted); font-size: .8rem; margin-top: .15rem; }
+.var-value-row { display: flex; align-items: baseline; gap: .5rem; margin: .5rem 0; }
+.var-value { font-size: 2.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.var-value.stale { color: var(--muted); }
+.var-unit { font-size: 1.2rem; color: var(--muted); }
+.chart-wrap { position: relative; height: 140px; }
+.var-foot { color: var(--muted); font-size: .78rem; margin-top: .5rem; }
+
+.empty-state { background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; padding: 2rem 1rem;
+  text-align: center; color: var(--muted); }
+.empty-state a { color: var(--accent); }
+.panel .empty-state { border: 0; border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; }
+
+/* --- Configuration --- */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1rem; border-bottom: 1px solid var(--border); }
+.panel .table { --bs-table-bg: transparent; }
+
+dialog { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1.5rem; width: min(640px, 94vw); }
+dialog::backdrop { background: rgba(0, 0, 0, .65); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+.form-control:focus, .form-select:focus, .form-check-input:focus { box-shadow: 0 0 0 .2rem rgba(74, 163, 255, .4); }
+
+@media (max-width: 768px) {
+  .var-value { font-size: 2.2rem; }
+  .cards-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+}

@@ -97,9 +97,9 @@ ou d’autres services.
 
 ## Relevé de données process
 
-Cette application relève périodiquement des valeurs (température, pression…) sur des automates Modbus TCP, les enregistre avec leur horodatage dans MariaDB et les expose par une API.
+Cette application relève périodiquement des valeurs (température, pression…) sur des automates. Un automate est un petit calculateur industriel qui pilote une machine. Le relevé se fait en Modbus TCP, le protocole standard qui permet de lire les registres (cases numérotées) d'un automate sur le réseau. Les valeurs sont enregistrées avec leur date et leur heure dans MariaDB, puis affichées en graphiques dans le navigateur.
 
-Au jalon 2, le relevé et l'API de configuration fonctionnent. Les graphiques temps réel (J3) et l'export CSV (J4) ne sont pas encore faits.
+Avancement : la configuration, le relevé et le tableau de bord temps réel sont faits. L'export CSV (jalon 4) et les comptes (jalon 5) ne sont pas encore faits.
 
 ## Schéma
 
@@ -116,93 +116,54 @@ flowchart LR
 Prérequis : Docker Desktop (avec WSL2 sous Windows), ou Docker Engine + Docker Compose v2.
 
 ```bash
-cp .env.example .env          # sous PowerShell : Copy-Item .env.example .env ; remplacer les mots de passe
+cp .env.example .env          # sous PowerShell : Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-Puis ouvrir http://localhost:8080 (page d'accueil) ou http://localhost:3000/api/health (état de l'API et de la base).
+Remplacer les mots de passe dans `.env` avant le premier lancement. Puis ouvrir http://localhost:8080.
 
-Au premier démarrage, la base est créée avec un automate « Simulateur » et quatre variables de démonstration. Pour repartir de zéro : `docker compose down -v` (cela efface les données).
+Pour repartir de zéro : `docker compose down -v` (cela efface toutes les données).
 
 ## Utiliser l'application
 
-Il n'y a pas encore d'écran de configuration : on passe par l'API, par exemple avec `curl` (Git Bash ou WSL).
-
-1. Voir les automates : `curl http://localhost:3000/api/plcs`
-2. Ajouter une variable (ici, la température du simulateur, registre 0) :
-
-```bash
-curl -X POST http://localhost:3000/api/variables \
-  -H "Content-Type: application/json" \
-  -d '{"plc_id":1,"name":"Température test","register_type":"holding","address":0,"data_type":"int16","scale":0.1,"frequency_s":2,"unit":"°C"}'
-```
-
-3. Vérifier que le relevé tourne : `curl http://localhost:3000/api/plcs/status`
-
-Les mesures sont écrites dans la table `prod.measures`. Les lire via l'API arrivera avec le jalon 3.
-
-### Routes
-
-| Méthode | Route | Rôle |
-|---|---|---|
-| GET, POST | `/api/plcs` | Lister / ajouter un automate |
-| GET, PUT, DELETE | `/api/plcs/:id` | Voir / modifier / supprimer un automate (refusé s'il a des variables) |
-| GET | `/api/plcs/status` | État de connexion de chaque automate |
-| GET, POST | `/api/variables` | Lister (filtre `?plc_id=`) / ajouter une variable |
-| GET, PUT, DELETE | `/api/variables/:id` | Voir / modifier / supprimer une variable (suppression logique) |
-
-L'état renvoyé par `/api/plcs/status` :
-
-| `state` | Signification |
-|---|---|
-| `online` | La dernière lecture a réussi |
-| `offline` | La dernière lecture a échoué (`last_error` donne la cause, par ex. `ECONNREFUSED`) |
-| `unknown` | Aucune lecture encore tentée (ou automate désactivé) |
-
-## Simulateur et vrai automate
-
-Le conteneur `simulator` joue un automate Modbus TCP. Il n'est pas publié sur le réseau : seul le backend le joint, sur le port 5020, unit ID 1.
-
-| Registre (holding) | Grandeur | Échelle |
-|---|---|---|
-| 0 | Température (°C) | × 0,1 |
-| 1 | Pression (bar) | × 0,01 |
-| 2 | Débit (m³/h) | × 0,1 |
-| 3 | Niveau (%) | × 0,1 |
-
-Pour brancher un vrai automate, il suffit de changer son adresse : `PUT /api/plcs/1` avec le nouveau `host`, `port` et `unit_id`. Les variables restent à régler : leurs adresses de registres doivent correspondre à la carte de ce nouvel automate.
-
-## Comment le relevé fonctionne
-
-- **Une tâche par variable**, avec `setInterval`. Nous n'avons pas utilisé `node-cron` : il travaille à la minute sur des horaires fixes, alors que nous voulions des fréquences en secondes (2 s, 7 s…). Quand une variable est ajoutée, modifiée ou supprimée, le relevé est replanifié à chaud, sans redémarrer le serveur.
-- **Une connexion Modbus par automate.** Les lectures d'un même automate se font l'une après l'autre. Une variable encore en cours de lecture saute son tour. Un automate lent ne bloque pas les autres.
-- **Délai de lecture** : `MODBUS_TIMEOUT_MS` (3000 par défaut). Passé ce délai, la lecture échoue.
-- **Échec** : une mesure est tout de même enregistrée, avec `quality = bad` et une valeur vide. Une coupure apparaît donc dans l'historique.
-- **Lecture seule** : seules les fonctions Modbus 1 à 4 (lecture) sont utilisées. Le compte SQL `poller` ne peut qu'ajouter des mesures, et le compte `api` ne peut que les lire. Aucune route ne modifie les mesures.
+1. **Configuration** : ajouter un automate (adresse IP, port, unit ID), puis les variables à surveiller (registre, adresse, type, fréquence). Un automate « Simulateur » et quatre variables de démonstration sont déjà présents au premier lancement.
+2. **Tableau de bord** : une carte et un graphique par variable, mis à jour automatiquement. Si un automate ne répond plus, son état est signalé sur les cartes de ses variables.
+3. **Export CSV** : pas encore fait (jalon 4).
 
 ## Accès depuis un autre PC du réseau
 
-Remplacer `localhost` par l'adresse IP de la machine qui fait tourner Docker (commande `ipconfig`). Il faut aussi autoriser les ports 8080 et 3000 dans le pare-feu Windows, et passer le réseau en profil « Privé ». Ce point n'est pas encore testé de notre côté.
+Remplacer `localhost` par l'adresse IP du PC qui fait tourner Docker (commande `ipconfig`), par exemple http://192.168.1.20:8080. Il faut autoriser les ports 8080 et 3000 dans le pare-feu Windows, et passer le réseau en profil « Privé ». Ce test n'est pas encore fait de notre côté.
 
-## Limites connues
+## Structure du projet
 
-- **Pas d'authentification sur l'API** avant le jalon 5. Le port 3000 est publié car le sujet l'exige : toute personne du réseau peut donc modifier la configuration.
-- **Pendant une panne, les mesures en échec s'espacent.** Les lectures d'un même automate se font l'une après l'autre. Si l'automate ne répond pas du tout, chaque échec attend le délai de 3 s : avec quatre variables, les mesures en échec arrivent alors moins souvent que la fréquence configurée.
-- **Pas encore faits** : graphiques temps réel (J3), export CSV (J4), comptes et équipes (J5), tableau de bord configurable (J6).
+```
+BACKEND/    API Express et service de relevé Modbus
+FRONTEND/   pages HTML, CSS et JavaScript servies par nginx
+SIMULATOR/  automate Modbus factice (température, pression…)
+db/         scripts SQL d'initialisation de MariaDB
+ASSETS/     captures d'écran
+docs/       rapport technique
+docker-compose.yml, .env.example
+```
+
+## Technologies
+
+- **Backend** : Node.js et Express (API), modbus-serial (lecture Modbus), mysql2 (accès à MariaDB).
+- **Base de données** : MariaDB, dans trois schémas séparés (`config`, `prod`, `app`).
+- **Frontend** : HTML, CSS et JavaScript sans framework, Bootstrap et Chart.js. Les bibliothèques sont copiées dans le projet, car le réseau d'une usine n'a pas forcément accès à Internet.
+- **Déploiement** : Docker Compose avec nginx (serveur web et relais vers l'API).
+
+Mise en garde : l'API n'a pas encore d'authentification (prévue au jalon 5). Toute personne du réseau qui accède au port 3000 peut modifier la configuration.
 
 ## Aperçu
 
-La page d'accueil affiche l'état de l'application et des deux connexions à la base de données. Elle se met à jour toutes les 5 secondes.
+Premières captures, avec l'état du système (jalon 1) :
 
 ![Page d'accueil : tout est connecté](ASSETS/accueil-ok.png)
 
-Si la base de données s'arrête (`docker compose stop db`), l'application reste en ligne et signale le problème. Tout revient au vert quand la base redémarre.
-
 ![Page d'accueil : base de données coupée](ASSETS/accueil-bdd-coupee.png)
 
-La même information est disponible en JSON sur `http://localhost:3000/api/health` :
-
-![Réponse de /api/health](ASSETS/api-health.png)
+<!-- TODO (humain) : capturer le tableau de bord temps réel, enregistrer l'image dans ASSETS/dashboard.png, puis ajouter ici : ![Tableau de bord temps réel](ASSETS/dashboard.png) -->
 
 ## Rapport technique
 

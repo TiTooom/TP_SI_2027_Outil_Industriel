@@ -3,45 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Supervision Process</title>
+  <title>Tableau de bord — Supervision Process</title>
   <!-- Bibliothèques servies en local : le réseau d'usine n'a pas forcément accès à Internet. -->
   <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <nav class="navbar border-bottom border-secondary-subtle px-3">
-    <span class="navbar-brand fw-semibold">🏭 Supervision Process</span>
-    <span class="text-secondary small">Prototype open source</span>
-  </nav>
+  <nav id="app-nav"></nav>
 
-  <main class="container py-4">
-    <h1 class="h4 mb-1">État du système</h1>
-    <p class="text-secondary mb-4">Le tableau de bord et la configuration des automates arrivent aux prochaines étapes.</p>
-
-    <div class="row g-3" id="health-cards">
-      <div class="col-12 col-md-4">
-        <div class="status-card">
-          <div class="status-label">Application</div>
-          <div class="status-value"><span class="dot" data-key="app"></span><span data-text="app">Vérification…</span></div>
-        </div>
-      </div>
-      <div class="col-12 col-md-4">
-        <div class="status-card">
-          <div class="status-label">Base de données — API</div>
-          <div class="status-value"><span class="dot" data-key="api"></span><span data-text="api">Vérification…</span></div>
-        </div>
-      </div>
-      <div class="col-12 col-md-4">
-        <div class="status-card">
-          <div class="status-label">Base de données — relevés</div>
-          <div class="status-value"><span class="dot" data-key="poller"></span><span data-text="poller">Vérification…</span></div>
-        </div>
-      </div>
+  <main class="container-fluid py-4 px-3 px-lg-4">
+    <div class="d-flex flex-wrap align-items-baseline justify-content-between mb-3">
+      <h1 class="h4 mb-0">Tableau de bord</h1>
+      <span class="text-secondary small" id="last-update" aria-live="polite"></span>
     </div>
 
-    <p class="text-secondary small mt-4" id="last-check" aria-live="polite"></p>
+    <div class="alert alert-danger" id="tick-error" role="alert" hidden></div>
+    <div class="alert alert-danger" id="list-error" role="alert" hidden></div>
+    <div class="empty-state" id="loading-state" role="status">Chargement des variables…</div>
+    <div class="empty-state" id="empty-state" hidden>
+      Aucune variable active à afficher.
+      <a href="config.html">Ajouter un automate et des variables dans la configuration</a>.
+    </div>
+
+    <div class="cards-grid" id="cards" hidden></div>
   </main>
 
-  <script type="module" src="js/health.js"></script>
+  <template id="card-template">
+    <article class="var-card">
+      <header class="var-card-head">
+        <h2 class="var-name"></h2>
+        <span class="state-badge"><span class="dot" aria-hidden="true"></span><span class="state-text"></span></span>
+      </header>
+      <div class="var-plc"></div>
+      <div class="var-value-row"><span class="var-value">—</span><span class="var-unit"></span></div>
+      <div class="chart-wrap"><canvas role="img"></canvas></div>
+      <footer class="var-foot"></footer>
+    </article>
+  </template>
+
+  <script src="vendor/chartjs/chart.umd.js"></script>
+  <script type="module" src="js/dashboard.js"></script>
 </body>
 </html>
