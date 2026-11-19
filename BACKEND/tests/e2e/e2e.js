@@ -56,6 +56,170 @@ async function login() {
   check('cookie sid posé', cookie.startsWith('sid='));
 }
 
+
+// J6 : tableaux de bord (droits, validation, limites, cascade, persistance)
+async function j6() {
+  const adminCookie = cookie;
+  const stamp = Date.now();
+  const pw = 'j6-password-12345';
+  const users = {};
+  const mkUser = async (role) => {
+    const username = `e2e-j6-${role}-${stamp}`;
+    const u = (await call('POST', `${API}/users`, { username, password: pw, role })).json;
+    const lg = await fetch(`${API}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: pw }) });
+    users[role] = { id: u.id, cookie: (lg.headers.getSetCookie()[0] || '').split(';')[0] };
+  };
+  for (const role of ['viewer', 'technician', 'engineer', 'admin']) await mkUser(role);
+  const as = async (who, method, url, body, raw) => {
+    cookie = who === 'admin0' ? adminCookie : users[who].cookie;
+    try { return await call(method, url, body, raw); } finally { cookie = adminCookie; }
+  };
+  const D = `${API}/dashboards`;
+  const w = (...ids) => ({ version: 1, widgets: ids.map((variableId) => ({ variableId, size: 'md' })) });
+
+  // T1 : viewer, technician, engineer membres ; T2 : aucun utilisateur de test
+  const t1 = (await call('POST', `${API}/teams`, { name: `e2e-j6-t1-${stamp}` })).json.id;
+  const t2 = (await call('POST', `${API}/teams`, { name: `e2e-j6-t2-${stamp}` })).json.id;
+  for (const role of ['viewer', 'technician', 'engineer']) await call('PUT', `${API}/teams/${t1}/members/${users[role].id}`);
+
+  check('J6 GET /dashboards sans session -> 401', (await fetch(D)).status === 401);
+  check('J6 sans session via nginx -> 401', (await fetch(`${NGINX}/dashboards`)).status === 401);
+
+  let r = await as('viewer', 'POST', D, { name: '  Perso viewer  ', layout: w(1, 2) });
+  check('J6 viewer crée un perso 201, nom rogné, can_edit', r.status === 201 && r.json.name === 'Perso viewer' && r.json.can_edit === true && r.json.scope === 'user' && r.json.widget_count === 2, JSON.stringify(r));
+  const pv = r.json && r.json.id;
+  r = await as('viewer', 'POST', D, { name: 'defaut' });
+  check('J6 layout par défaut vide', r.status === 201 && JSON.stringify(r.json.layout) === '{"version":1,"widgets":[]}', JSON.stringify(r.json));
+  const pdef = r.json.id;
+  check('J6 doublon de nom -> 409', (await as('viewer', 'POST', D, { name: 'Perso viewer' })).status === 409);
+  r = await as('viewer', 'PUT', `${D}/${pdef}`, { name: 'Perso viewer' });
+  check('J6 renommer en doublon -> 409', r.status === 409 && r.json.error === 'Dashboard name already used', JSON.stringify(r));
+  for (const who of ['engineer', 'technician']) {
+    for (const m of ['GET', 'PUT', 'DELETE']) {
+      const x = await as(who, m, `${D}/${pv}`, m === 'PUT' ? { name: 'hack' } : undefined);
+      check(`J6 ${who} ${m} perso d'autrui -> 404`, x.status === 404 && x.json.error === 'Dashboard not found', JSON.stringify(x));
+    }
+  }
+  r = await as('engineer', 'GET', D);
+  check("J6 liste engineer sans le perso d'autrui, sans layout", r.status === 200 && !r.json.some((d) => d.id === pv) && r.json.every((d) => d.layout === undefined));
+  r = await as('admin0', 'GET', `${D}/${pv}`);
+  check('J6 admin lit le perso de viewer', r.status === 200 && r.json.can_edit === true);
+  r = await as('admin0', 'PUT', `${D}/${pv}`, { name: 'Perso viewer', layout: w(2, 1) });
+  check('J6 admin modifie, propriétaire inchangé', r.status === 200 && r.json.owner_user_id === users.viewer.id, JSON.stringify(r.json));
+  r = await as('viewer', 'PUT', `${D}/${pv}`, { layout: w(1), team_id: t1, owner_user_id: users.engineer.id });
+  check('J6 PUT ignore team_id/owner (propriétaire inchangé)', r.status === 200 && r.json.scope === 'user' && r.json.owner_user_id === users.viewer.id && r.json.owner_team_id === null, JSON.stringify(r.json));
+
+  check('J6 viewer membre crée tableau équipe -> 403', (await as('viewer', 'POST', D, { name: 'eq-v', team_id: t1 })).status === 403);
+  check('J6 technician membre crée tableau équipe -> 403', (await as('technician', 'POST', D, { name: 'eq-t', team_id: t1 })).status === 403);
+  r = await as('engineer', 'POST', D, { name: 'Equipe', team_id: t1, layout: w(3) });
+  check('J6 engineer membre crée tableau équipe 201', r.status === 201 && r.json.scope === 'team' && r.json.owner_team_id === t1 && r.json.owner_user_id === null, JSON.stringify(r));
+  const te = r.json && r.json.id;
+  r = await as('engineer', 'POST', D, { name: 'eq-t2', team_id: t2 });
+  check('J6 engineer non membre crée -> 404 Team not found', r.status === 404 && r.json.error === 'Team not found', JSON.stringify(r));
+  check('J6 équipe inconnue -> 404', (await as('engineer', 'POST', D, { name: 'eq-x', team_id: 99999999 })).status === 404);
+  r = await as('viewer', 'GET', `${D}/${te}`);
+  check('J6 viewer membre lit tableau équipe, can_edit=false', r.status === 200 && r.json.can_edit === false, JSON.stringify(r));
+  for (const [m, body] of [['PUT', { name: 'x' }], ['DELETE', undefined]]) {
+    for (const who of ['viewer', 'technician']) {
+      const x = await as(who, m, `${D}/${te}`, body);
+      check(`J6 ${who} membre ${m} tableau équipe -> 403`, x.status === 403 && x.json.error === 'Insufficient role', JSON.stringify(x));
+    }
+  }
+  r = await as('engineer', 'PUT', `${D}/${te}`, { layout: w(3, 4) });
+  check('J6 engineer membre PUT équipe 200', r.status === 200 && r.json.widget_count === 2);
+  r = await as('admin0', 'POST', D, { name: 'Equipe admin', team_id: t2 });
+  check('J6 admin crée tableau équipe T2 201', r.status === 201, JSON.stringify(r));
+  const t2d = r.json && r.json.id;
+  for (const who of ['viewer', 'engineer']) {
+    for (const m of ['GET', 'PUT', 'DELETE']) {
+      const x = await as(who, m, `${D}/${t2d}`, m === 'PUT' ? { name: 'hack' } : undefined);
+      check(`J6 ${who} ${m} tableau équipe non membre -> 404`, x.status === 404, JSON.stringify(x));
+    }
+  }
+  r = await as('viewer', 'GET', D);
+  check('J6 liste viewer : perso + équipe T1, pas T2', r.json.some((d) => d.id === te) && r.json.some((d) => d.id === pv) && !r.json.some((d) => d.id === t2d));
+  check('J6 liste : perso avant équipe', r.json.findIndex((d) => d.scope === 'user') < r.json.findIndex((d) => d.scope === 'team'));
+
+  for (const id of ['abc', '0', '-1', '1.5']) {
+    check(`J6 GET /dashboards/${id} -> 400`, (await as('engineer', 'GET', `${D}/${id}`)).status === 400);
+  }
+  check('J6 id inexistant -> 404', (await as('engineer', 'GET', `${D}/99999999`)).status === 404);
+
+  const bad = async (label, body, raw) => {
+    const x = await as('engineer', 'POST', D, body, raw);
+    check(`J6 layout ${label} -> 400`, x.status === 400 && x.json && typeof x.json.error === 'string', `${x.status} ${JSON.stringify(x.json)}`);
+  };
+  const ok = (id) => ({ variableId: id, size: 'sm' });
+  await bad('widgets non tableau', { name: 'b1', layout: { version: 1, widgets: {} } });
+  await bad('version 2', { name: 'b2', layout: { version: 2, widgets: [] } });
+  await bad('clé en trop (layout)', { name: 'b3', layout: { version: 1, widgets: [], extra: 1 } });
+  await bad('clé en trop (widget)', { name: 'b4', layout: { version: 1, widgets: [{ variableId: 1, size: 'sm', x: 1 }] } });
+  await bad('id doublon', { name: 'b5', layout: { version: 1, widgets: [ok(1), ok(1)] } });
+  for (const [i, v] of [0, -3, 1.5, '7', null, 4294967296].entries()) await bad(`variableId ${JSON.stringify(v)}`, { name: `bi${i}`, layout: { version: 1, widgets: [{ variableId: v, size: 'sm' }] } });
+  await bad('taille inconnue', { name: 'b6', layout: { version: 1, widgets: [{ variableId: 1, size: 'xl' }] } });
+  await bad('taille absente', { name: 'b7', layout: { version: 1, widgets: [{ variableId: 1 }] } });
+  await bad('51 widgets', { name: 'b8', layout: { version: 1, widgets: Array.from({ length: 51 }, (_, i) => ok(i + 1)) } });
+  await bad('layout tableau', { name: 'b9', layout: [] });
+  await bad('layout chaîne', { name: 'b10', layout: 'x' });
+  await bad('widget non objet', { name: 'b11', layout: { version: 1, widgets: [1] } });
+  await bad('__proto__ (clé en trop)', null, '{"name":"b12","layout":{"version":1,"widgets":[],"__proto__":{"polluted":1}}}');
+  await bad('__proto__ dans widget', null, '{"name":"b13","layout":{"version":1,"widgets":[{"variableId":1,"size":"sm","__proto__":{"a":1}}]}}');
+  await bad('constructor dans widget', null, '{"name":"b14","layout":{"version":1,"widgets":[{"variableId":1,"size":"sm","constructor":{"prototype":{"a":1}}}]}}');
+  await bad('JSON > 16 Ko', { name: 'b15', layout: { version: 1, widgets: [], pad: 'x'.repeat(20000) } });
+  r = await as('engineer', 'POST', D, null, JSON.stringify({ name: 'b16', layout: { version: 1, widgets: [], pad: 'x'.repeat(2 * 1024 * 1024) } }));
+  check('J6 JSON géant (2 Mo) -> 413 ou 400', [400, 413].includes(r.status), String(r.status));
+  await bad('JSON invalide', null, '{bad');
+  await bad('nom vide', { name: '   ' });
+  await bad('nom 101 car.', { name: 'a'.repeat(101) });
+  await bad('nom absent', { layout: w(1) });
+  await bad('nom non chaîne', { name: 5 });
+  await bad('team_id invalide', { name: 'b17', team_id: 'abc' });
+  check('J6 pollution de prototype absente', ({}).polluted === undefined && ({}).a === undefined);
+  r = await as('engineer', 'POST', D, { name: 'taille max', layout: { version: 1, widgets: Array.from({ length: 50 }, (_, i) => ({ variableId: 4000000000 + i, size: 'lg' })) } });
+  check('J6 50 widgets (borne) 201', r.status === 201, `${r.status} ${JSON.stringify(r.json)}`);
+  r = await as('engineer', 'PUT', `${D}/${r.json.id}`, {});
+  check('J6 PUT corps vide -> 400', r.status === 400);
+  r = await as('engineer', 'PUT', `${D}/${te}`, { layout: { version: 1, widgets: [ok(1), ok(1)] } });
+  check('J6 PUT layout doublon -> 400', r.status === 400);
+  r = await as('engineer', 'GET', `${D}/${te}`);
+  check('J6 layout inchangé après PUT refusé', r.json.layout.widgets.length === 2);
+
+  r = await as('engineer', 'POST', D, { name: 'fantome', layout: w(987654) });
+  check('J6 variable inexistante dans layout acceptée', r.status === 201 && r.json.layout.widgets[0].variableId === 987654);
+  const fantome = r.json.id;
+
+  // Plafond 20 par propriétaire (technician n'a encore aucun tableau)
+  let last = 0;
+  for (let i = 0; i < 20; i++) last = (await as('technician', 'POST', D, { name: `cap-${i}` })).status;
+  check('J6 20e tableau accepté', last === 201, String(last));
+  r = await as('technician', 'POST', D, { name: 'cap-over' });
+  check('J6 21e tableau perso -> 4xx', r.status >= 400 && r.status < 500 && typeof r.json.error === 'string', `${r.status} ${JSON.stringify(r.json)}`);
+  check('J6 le plafond ne touche pas les autres propriétaires', (await as('viewer', 'POST', D, { name: 'encore' })).status === 201);
+
+  const snap = (await as('viewer', 'GET', `${D}/${pv}`)).json;
+  const snapTeam = (await as('engineer', 'GET', `${D}/${te}`)).json;
+  compose('restart backend');
+  await sleep(20000);
+  const after = await as('viewer', 'GET', `${D}/${pv}`);
+  check('J6 perso conservé après restart backend', after.status === 200 && JSON.stringify(after.json.layout) === JSON.stringify(snap.layout) && after.json.name === snap.name, `${after.status}`);
+  const afterT = await as('engineer', 'GET', `${D}/${te}`);
+  check('J6 tableau équipe conservé après restart backend', afterT.status === 200 && JSON.stringify(afterT.json.layout) === JSON.stringify(snapTeam.layout), `${afterT.status}`);
+
+  const dbCount = (where) => Number(sql(`SELECT COUNT(*) FROM app.dashboards WHERE ${where}`));
+  check("J6 tableaux d'équipe présents avant suppression", dbCount(`owner_team_id = ${t1}`) >= 1);
+  check('J6 DELETE tableau 204 puis 404', (await as('engineer', 'DELETE', `${D}/${fantome}`)).status === 204 && (await as('engineer', 'GET', `${D}/${fantome}`)).status === 404);
+  check('J6 DELETE équipe 204', (await call('DELETE', `${API}/teams/${t1}`)).status === 204);
+  check("J6 suppression d'équipe cascade sur ses tableaux", dbCount(`owner_team_id = ${t1}`) === 0);
+  check("J6 les tableaux perso des membres survivent à la suppression d'équipe", (await as('viewer', 'GET', `${D}/${pv}`)).status === 200);
+  check('J6 DELETE équipe T2 204 + cascade', (await call('DELETE', `${API}/teams/${t2}`)).status === 204 && dbCount(`owner_team_id = ${t2}`) === 0);
+  for (const role of ['viewer', 'technician', 'engineer', 'admin']) {
+    const uid = users[role].id;
+    const n = dbCount(`owner_user_id = ${uid}`);
+    check(`J6 DELETE utilisateur ${role} cascade sur ses ${n} tableaux`, (await call('DELETE', `${API}/users/${uid}`)).status === 204 && dbCount(`owner_user_id = ${uid}`) === 0);
+  }
+  check('J6 aucun reliquat e2e-j6 (utilisateurs, équipes)', sql("SELECT COUNT(*) FROM app.users WHERE username LIKE 'e2e-j6-%'") === '0' && sql("SELECT COUNT(*) FROM app.teams WHERE name LIKE 'e2e-j6-%'") === '0');
+}
+
 async function main() {
   await login();
   const base = { plc_id: 1, register_type: 'holding', address: 0, data_type: 'int16', scale: 0.1, unit: 'C', frequency_s: 1 };
@@ -342,6 +506,7 @@ async function main() {
   check('logout 204', logout.status === 204);
   check('session révoquée après logout -> 401', (await call('GET', `${API}/plcs`)).status === 401);
   await login();
+  await j6();
 
   // Nettoyage des données de test (le compte root seul peut supprimer des mesures)
   const mine = "SELECT id FROM config.variables WHERE name LIKE '%e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE '%e2e-%')";

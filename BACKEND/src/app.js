@@ -8,6 +8,7 @@ const { createVariablesRouter } = require('./routes/variables');
 const { createAuthRouter } = require('./routes/auth');
 const { createUsersRouter } = require('./routes/users');
 const { createTeamsRouter } = require('./routes/teams');
+const { createDashboardsRouter } = require('./routes/dashboards');
 const { createAuthenticate } = require('./middleware/authenticate');
 const { requireRole, requireRoleByMethod } = require('./middleware/requireRole');
 const { csrfGuard } = require('./middleware/csrf');
@@ -23,6 +24,7 @@ function defaultDeps() {
     poller: require('./jobs/pollerInstance'),
     userRepo: require('./repositories/userRepository'),
     teamRepo: require('./repositories/teamRepository'),
+    dashboardRepo: require('./repositories/dashboardRepository'),
     sessionService: require('./services/sessionInstance'),
     throttle: createLoginThrottle(),
   };
@@ -64,6 +66,7 @@ function createApp(deps = defaultDeps()) {
   app.use('/api/export.csv', authenticate, requireRoleByMethod({ GET: 'viewer' }, 'engineer'), createExportRouter(deps));
   app.use('/api/users', ...admin, createUsersRouter(deps));
   app.use('/api/teams', ...admin, createTeamsRouter(deps));
+  app.use('/api/dashboards', authenticate, createDashboardsRouter(deps));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 

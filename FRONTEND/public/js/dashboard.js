@@ -3,7 +3,8 @@
 // périodiquement pour détecter ajouts, suppressions et modifications.
 import { api, serverNow } from './api.js';
 import { mountNav } from './nav.js';
-import { STATES } from './dom.js';
+import { initLayout } from './layout.js';
+import { STATES, el } from './dom.js';
 import { formatValue, formatClock } from './format.js';
 
 const WINDOW_MS = 10 * 60 * 1000;
@@ -20,6 +21,13 @@ let plcStatus = new Map();
 let pollTimer = null;
 let listTimer = null;
 let ticking = false;
+// Ce qu'il faut afficher, piloté par layout.js : widgets = null -> « Toutes les variables » ;
+// sinon liste ordonnée { variableId, size }. ready = false tant que le tableau n'est pas choisi.
+const display = { ready: false, widgets: null, editing: false, actions: null };
+let active = new Map(); // variable_id -> { variable, plcName } (variables actives connues du serveur)
+let catalogReady = false;
+let layout = null;
+let dragId = null;
 let generation = 0; // invalide les boucles de liste d'une session précédente (visibilitychange)
 
 // --- Graphique ---------------------------------------------------------------
@@ -78,6 +86,67 @@ function signatureOf(v, plcName) {
   return JSON.stringify([v.name, v.unit, v.frequency_s, v.plc_id, v.data_type, v.register_type, v.address, plcName]);
 }
 
+// Barre d'édition de la carte (visible seulement en mode édition, cf. CSS .editing).
+function buildTools(variable) {
+  const name = variable.name;
+  const btn = (cls, text, label) => el('button', {
+    className: `btn btn-outline-light btn-sm ${cls}`, text,
+    attrs: { type: 'button', 'aria-label': label, 'data-testid': cls },
+  });
+  const up = btn('card-move-up', '▲', `Monter ${name}`);
+  const down = btn('card-move-down', '▼', `Descendre ${name}`);
+  const remove = btn('card-remove', 'Retirer', `Retirer ${name} du tableau`);
+  const size = el('select', {
+    className: 'form-select form-select-sm card-size',
+    attrs: { 'aria-label': `Taille de ${name}`, 'data-testid': 'card-size' },
+  }, [['sm', 'Petit'], ['md', 'Moyen'], ['lg', 'Grand']].map(([v, t]) => el('option', { text: t, attrs: { value: v } })));
+  const handle = el('span', { className: 'drag-hint', text: '⠿ glisser', attrs: { 'aria-hidden': 'true' } });
+  const root = el('div', { className: 'card-tools', attrs: { role: 'group', 'aria-label': `Édition de ${name}` } }, [handle, up, down, size, remove]);
+
+  const id = variable.id;
+  // Après un déplacement le DOM est réordonné : on rend le focus au bouton (ou à son opposé s'il est désactivé).
+  const moveWith = (button, other, dir) => button.addEventListener('click', () => {
+    display.actions?.move(id, dir);
+    (button.disabled ? other : button).focus();
+  });
+  moveWith(up, down, -1);
+  moveWith(down, up, 1);
+  size.addEventListener('change', () => display.actions?.resize(id, size.value));
+  remove.addEventListener('click', () => display.actions?.remove(id));
+  return { root, up, down, size };
+}
+
+// Glisser-déposer HTML5 natif : la carte glissée prend la place de la carte survolée.
+function attachDrag(node, id) {
+  node.addEventListener('dragstart', (e) => {
+    if (!display.editing || e.target !== node) return;
+    dragId = id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(id)); // requis par Firefox
+    node.classList.add('dragging');
+  });
+  node.addEventListener('dragend', () => {
+    dragId = null;
+    node.classList.remove('dragging');
+    for (const n of grid.querySelectorAll('.drop-target')) n.classList.remove('drop-target');
+  });
+  node.addEventListener('dragover', (e) => {
+    if (!display.editing || dragId === null || dragId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    node.classList.add('drop-target');
+  });
+  node.addEventListener('dragleave', (e) => {
+    if (!node.contains(e.relatedTarget)) node.classList.remove('drop-target');
+  });
+  node.addEventListener('drop', (e) => {
+    e.preventDefault();
+    node.classList.remove('drop-target');
+    if (display.editing && dragId !== null && dragId !== id) display.actions?.reorder(dragId, id);
+    dragId = null;
+  });
+}
+
 function buildCard(variable, plcName) {
   const node = document.importNode($('card-template').content, true).firstElementChild;
   node.querySelector('.var-name').textContent = variable.name;
@@ -86,8 +155,11 @@ function buildCard(variable, plcName) {
   node.querySelector('.var-unit').textContent = variable.unit;
   const canvas = node.querySelector('canvas');
   canvas.setAttribute('aria-label', `Évolution de ${variable.name} sur les 10 dernières minutes`);
+  const tools = buildTools(variable);
+  node.append(tools.root);
+  attachDrag(node, variable.id);
   return {
-    variable, signature: signatureOf(variable, plcName), node,
+    variable, signature: signatureOf(variable, plcName), node, tools,
     valueEl: node.querySelector('.var-value'), badgeEl: node.querySelector('.state-badge'),
     footEl: node.querySelector('.var-foot'), lastTs: 0, lastMeasure: null, historyLoaded: false,
     chart: createChart(canvas, variable),
@@ -144,6 +216,7 @@ function removeCard(id) {
 function showView(view) {
   $('loading-state').hidden = view !== 'loading';
   $('empty-state').hidden = view !== 'empty';
+  $('empty-dashboard').hidden = view !== 'empty-dashboard';
   grid.hidden = view !== 'cards';
 }
 
@@ -164,35 +237,57 @@ function restartPollTimer() {
   pollTimer = setInterval(tick, pollIntervalMs());
 }
 
-async function syncList() {
-  const [variables, plcs] = await Promise.all([api.listVariables(), api.listPlcs()]);
-  const plcNames = new Map(plcs.map((p) => [p.id, p.name]));
-  const active = variables.filter((v) => v.enabled);
-  const activeIds = new Set(active.map((v) => v.id));
+// Fait correspondre les cartes au tableau choisi : crée les manquantes, détruit les retirées
+// ou modifiées (chart.destroy), réordonne et applique tailles / état d'édition sans toucher aux autres.
+function reconcile() {
+  if (!catalogReady || !display.ready) return [];
+  const wanted = display.widgets === null
+    ? [...active.values()].sort((a, b) => a.variable.id - b.variable.id).map((e) => ({ ...e, size: null }))
+    : display.widgets.filter((w) => active.has(w.variableId)).map((w) => ({ ...active.get(w.variableId), size: w.size }));
+  const wantedIds = new Set(wanted.map((e) => e.variable.id));
   const loads = [];
   let changed = false;
 
-  for (const id of [...cards.keys()]) {
-    if (!activeIds.has(id)) { removeCard(id); changed = true; }
+  for (const [id, card] of [...cards]) {
+    const e = active.get(id);
+    if (!wantedIds.has(id) || card.signature !== signatureOf(e.variable, e.plcName)) { removeCard(id); changed = true; }
   }
-  for (const v of active) {
-    const plcName = plcNames.get(v.plc_id) ?? `Automate ${v.plc_id}`;
-    const existing = cards.get(v.id);
-    if (existing && existing.signature === signatureOf(v, plcName)) continue;
-    if (existing) removeCard(v.id); // variable modifiée : on reconstruit la carte
-    const card = buildCard(v, plcName);
-    cards.set(v.id, card);
+  for (const e of wanted) {
+    if (cards.has(e.variable.id)) continue;
+    const card = buildCard(e.variable, e.plcName);
+    cards.set(e.variable.id, card);
     loads.push(loadHistory(card));
     changed = true;
   }
-  if (changed) {
-    // Ordre d'affichage stable : par id de variable
-    const sorted = [...cards.values()].sort((a, b) => a.variable.id - b.variable.id);
-    grid.replaceChildren(...sorted.map((c) => c.node));
-    restartPollTimer();
+  const ordered = wanted.map((e) => cards.get(e.variable.id));
+  if (ordered.length !== grid.children.length || ordered.some((c, i) => grid.children[i] !== c.node)) {
+    grid.replaceChildren(...ordered.map((c) => c.node));
   }
-  showView(cards.size ? 'cards' : 'empty');
-  await Promise.all(loads);
+  grid.classList.toggle('layout-grid', display.widgets !== null);
+  grid.classList.toggle('editing', display.editing);
+  ordered.forEach((card, i) => {
+    const size = display.widgets === null ? null : wanted[i].size;
+    card.node.className = size ? `var-card size-${size}` : 'var-card';
+    card.node.draggable = display.editing;
+    card.tools.up.disabled = i === 0;
+    card.tools.down.disabled = i === ordered.length - 1;
+    card.tools.size.value = size ?? 'md';
+  });
+  if (changed) restartPollTimer();
+  if (cards.size || display.editing) showView('cards');
+  else showView(display.widgets === null ? 'empty' : 'empty-dashboard');
+  return loads;
+}
+
+async function syncList() {
+  const [variables, plcs] = await Promise.all([api.listVariables(), api.listPlcs()]);
+  const plcNames = new Map(plcs.map((p) => [p.id, p.name]));
+  active = new Map(variables.filter((v) => v.enabled).map((v) => [
+    v.id, { variable: v, plcName: plcNames.get(v.plc_id) ?? `Automate ${v.plc_id}` },
+  ]));
+  catalogReady = true;
+  layout?.setVariables([...active.values()].map((e) => ({ id: e.variable.id, name: e.variable.name, plcName: e.plcName })));
+  await Promise.all(reconcile());
 }
 
 // --- Boucles -----------------------------------------------------------------
@@ -255,5 +350,14 @@ window.addEventListener('pagehide', () => {
   for (const id of [...cards.keys()]) removeCard(id);
 });
 
-await mountNav();
+display.show = (widgets, editing, actions) => {
+  display.ready = true;
+  display.widgets = widgets;
+  display.editing = editing;
+  display.actions = actions;
+  reconcile();
+};
+
+const user = await mountNav();
+layout = initLayout({ user, display });
 start();

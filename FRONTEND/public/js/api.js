@@ -91,6 +91,11 @@ export const api = {
   deleteTeam: (id) => request(`/teams/${id}`, { method: 'DELETE' }),
   addMember: (teamId, userId) => request(`/teams/${teamId}/members/${userId}`, { method: 'PUT' }),
   removeMember: (teamId, userId) => request(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
+  listDashboards: () => request('/dashboards'),
+  getDashboard: (id) => request(`/dashboards/${id}`),
+  createDashboard: (d) => request('/dashboards', { method: 'POST', body: d }),
+  updateDashboard: (id, d) => request(`/dashboards/${id}`, { method: 'PUT', body: d }),
+  deleteDashboard: (id) => request(`/dashboards/${id}`, { method: 'DELETE' }),
   measures: (id, { from, to, limit }) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (from) qs.set('from', from);

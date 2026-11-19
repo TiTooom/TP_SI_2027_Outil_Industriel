@@ -99,7 +99,7 @@ ou d’autres services.
 
 Cette application relève périodiquement des valeurs (température, pression…) sur des automates. Un automate est un petit calculateur industriel qui pilote une machine. Le relevé se fait en Modbus TCP, le protocole standard qui permet de lire les registres (cases numérotées) d'un automate sur le réseau. Les valeurs sont enregistrées avec leur date et leur heure dans MariaDB, puis affichées en graphiques dans le navigateur.
 
-Avancement : la configuration, le relevé, le tableau de bord temps réel et l'export CSV sont faits. Les comptes, les rôles et les équipes (jalon 5) sont faits et testés en Docker. Le tableau de bord configurable (jalon 6) n'est pas commencé.
+Avancement : la configuration, le relevé, le tableau de bord temps réel et l'export CSV sont faits. Les comptes, les rôles et les équipes (jalon 5) sont faits et testés en Docker. Le tableau de bord configurable (jalon 6) est écrit : il attend son test de démonstration.
 
 ## Schéma
 
@@ -124,6 +124,16 @@ Remplacer les mots de passe dans `.env` avant le premier lancement. Puis ouvrir 
 
 Pour repartir de zéro : `docker compose down -v` (cela efface toutes les données).
 
+### Mise à jour d'une base déjà créée
+
+`db/init` ne s'exécute que sur un volume vide. Sur une base existante, appliquer le script de migration à la main (le mot de passe est lu dans le conteneur, il n'apparaît pas dans la commande) :
+
+```bash
+cat db/migrations/002_dashboards_unique.sql | docker compose exec -T db sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'
+```
+
+Sous PowerShell : `Get-Content db/migrations/002_dashboards_unique.sql | docker compose exec -T db sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`
+
 ## Première connexion
 
 Au premier démarrage, un compte administrateur est créé avec `ADMIN_USERNAME` et `ADMIN_PASSWORD` (dans `.env`). Se connecter, puis changer ce mot de passe dans « Mon compte ». Si la base existait avant l'ajout des comptes, lancer une fois `docker compose down -v` : la table des sessions n'est créée que sur une base vide (cela efface les données).
@@ -132,7 +142,8 @@ Au premier démarrage, un compte administrateur est créé avec `ADMIN_USERNAME`
 
 1. **Configuration** : ajouter un automate (adresse IP, port, unit ID), puis les variables à surveiller (registre, adresse, type, fréquence). Un automate « Simulateur » et quatre variables de démonstration sont déjà présents au premier lancement.
 2. **Tableau de bord** : une carte et un graphique par variable, mis à jour automatiquement. Si un automate ne répond plus, son état est signalé sur les cartes de ses variables.
-3. **Export CSV** : page « Export ». Choisir le début et la fin de la plage (ou un raccourci : 1 h, 24 h, 7 j), cocher les variables, puis cliquer sur « Télécharger CSV ». Le fichier sépare les colonnes par un point-virgule et utilise la virgule pour les décimales : il s'ouvre directement dans Excel en français. Une plage ne peut pas dépasser 31 jours, et un export est limité à 500 000 lignes (l'application le signale avant le téléchargement). L'aperçu graphique de la page Export est indicatif : il ne montre que les 7 derniers jours de la plage.
+3. **Tableaux configurables** : dans le menu « Tableau », choisir un tableau personnel (visible par vous seul) ou d'équipe (visible par ses membres). « Modifier » permet de glisser-déposer les cartes (ou de les monter et descendre avec ▲ ▼), de choisir leur taille, puis « Enregistrer ». Droits : seul le propriétaire modifie un tableau personnel ; un tableau d'équipe se lit par tous les membres et se modifie à partir du rôle ingénieur.
+4. **Export CSV** : page « Export ». Choisir le début et la fin de la plage (ou un raccourci : 1 h, 24 h, 7 j), cocher les variables, puis cliquer sur « Télécharger CSV ». Le fichier sépare les colonnes par un point-virgule et utilise la virgule pour les décimales : il s'ouvre directement dans Excel en français. Une plage ne peut pas dépasser 31 jours, et un export est limité à 500 000 lignes (l'application le signale avant le téléchargement). L'aperçu graphique de la page Export est indicatif : il ne montre que les 7 derniers jours de la plage.
 
 ### Comptes et rôles
 

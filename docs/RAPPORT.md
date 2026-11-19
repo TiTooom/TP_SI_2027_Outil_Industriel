@@ -184,6 +184,7 @@ Les tables `app.*` et `prod.measures` existent, mais l'application ne les rempli
 | API de configuration des automates et des variables (ajout, modification, suppression logique) (J2) | Écrit, test de démonstration à faire |
 | Simulateur Modbus TCP factice dans un conteneur, pour tester sans matériel (J2) | Écrit, test de démonstration à faire |
 | Export CSV par plage de dates depuis la page « Export » : séparateur `;`, décimales à la virgule, compatible Excel français, plage limitée à 31 jours et 500 000 lignes (J4) | Écrit. 15 tests automatiques passent (`node --test`). Test de démonstration à faire |
+| Tableau de bord configurable : tableaux personnels ou d'équipe, cartes à glisser-déposer ou à monter et descendre, taille de chaque carte, droits selon le rôle (J6) | Écrit, test de démonstration à faire |
 
 Les tests réellement effectués le 19/11 dans Docker sont les suivants :
 
@@ -212,15 +213,14 @@ Ces fonctionnalités sont écrites. Elles attendent encore leur test de démonst
 - **Mon compte** : chacun peut changer son mot de passe.
 - **Quatre rôles** (lecteur, technicien, ingénieur, administrateur), vérifiés par le backend sur chaque route. Les boutons du site sont aussi masqués selon le rôle.
 - **Page Administration** (administrateur seul) : créer, supprimer un compte, changer son rôle, réinitialiser son mot de passe.
-- **Équipes** : créer, renommer, supprimer une équipe, ajouter ou retirer des membres. Les équipes ne servent pas encore au tableau de bord : ce sera le rôle du jalon J6.
+- **Équipes** : créer, renommer, supprimer une équipe, ajouter ou retirer des membres. Une équipe peut avoir ses propres tableaux de bord (jalon J6) : les membres les voient, et seul le rôle ingénieur peut les modifier.
 - **API protégée** : toutes les routes de l'API, y compris celles du port 3000 publié sur le réseau, exigent une session, sauf la connexion et `/api/health`.
 
 ### 5.3 Ce qui n'est pas encore fait
 
-Les fonctionnalités suivantes sont prévues. Elles ne sont **pas** réalisées à ce jour.
+Le point suivant reste ouvert.
 
-- **Jalon J5 (à venir) :** comptes utilisateurs, connexion, rôles (administrateur, ingénieur, technicien, lecteur) ; équipes ; protection des routes côté serveur.
-- **Jalon J6 (à venir) :** tableau de bord configurable par glisser-déposer, en mode personnel ou en mode équipe.
+- **Jalon J6 :** les tableaux de bord configurables, personnels et d'équipe, sont implémentés. Le test de démonstration est en cours.
 
 
 ## 6. Conclusion et retour d'expérience

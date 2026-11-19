@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS app.dashboards (
   layout        JSON         NOT NULL,
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_dashboards_user_name (owner_user_id, name),
+  UNIQUE KEY uq_dashboards_team_name (owner_team_id, name),
   CONSTRAINT fk_dashboards_user FOREIGN KEY (owner_user_id) REFERENCES app.users(id) ON DELETE CASCADE,
   CONSTRAINT fk_dashboards_team FOREIGN KEY (owner_team_id) REFERENCES app.teams(id) ON DELETE CASCADE,
   -- Un dashboard appartient soit à un utilisateur (mode perso), soit à une équipe (mode équipe).

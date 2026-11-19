@@ -4,6 +4,9 @@ const KNOWN = {
   'Wrong current password': 'Le mot de passe actuel est incorrect.',
   'Cannot delete yourself': 'Vous ne pouvez pas supprimer votre propre compte.',
   'Cannot remove the last admin': 'Impossible : il doit rester au moins un administrateur.',
+  'Dashboard name already used': 'Ce nom de tableau est déjà utilisé.',
+  'Dashboard not found': "Ce tableau n'existe plus ou n'est pas accessible.",
+  'Team not found': "Équipe introuvable ou vous n'en êtes pas membre.",
   'Insufficient role': 'Droits insuffisants pour cette action.',
 };
 
