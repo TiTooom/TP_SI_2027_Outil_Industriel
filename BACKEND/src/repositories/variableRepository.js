@@ -6,14 +6,40 @@ const COLUMNS = `id, plc_id, name, register_type, address, data_type, scale, val
 
 const toVariable = (row) => ({ ...row, enabled: Boolean(row.enabled) });
 
-async function list(plcId) {
-  const where = plcId === undefined ? '' : 'AND plc_id = ?';
+// Variables supprimées incluses (historique exportable) : plc_name et deleted_at ISO (null si active).
+const WITH_DELETED = `SELECT v.id, v.plc_id, v.name, v.register_type, v.address, v.data_type, v.scale, v.value_offset,
+  COALESCE(v.unit, '') AS unit, v.frequency_s, v.enabled, v.created_at, v.updated_at, v.deleted_at, p.name AS plc_name
+  FROM config.variables v JOIN config.plcs p ON p.id = v.plc_id`;
+
+const toVariableWithDeleted = (row) => ({
+  ...toVariable(row),
+  deleted_at: row.deleted_at ? row.deleted_at.toISOString() : null,
+});
+
+async function list(plcId, includeDeleted = false) {
   const params = plcId === undefined ? [] : [plcId];
+  if (includeDeleted) {
+    const where = plcId === undefined ? '' : 'WHERE v.plc_id = ?';
+    const [rows] = await apiPool.query(`${WITH_DELETED} ${where} ORDER BY v.id`, params);
+    return rows.map(toVariableWithDeleted);
+  }
+  const where = plcId === undefined ? '' : 'AND plc_id = ?';
   const [rows] = await apiPool.query(
     `SELECT ${COLUMNS} FROM config.variables WHERE deleted_at IS NULL ${where} ORDER BY id`,
     params,
   );
   return rows.map(toVariable);
+}
+
+async function findByIdIncludingDeleted(id) {
+  const [rows] = await apiPool.query(`${WITH_DELETED} WHERE v.id = ?`, [id]);
+  return rows[0] ? toVariableWithDeleted(rows[0]) : null;
+}
+
+// L'appelant compare avec les ids demandés pour détecter les inconnus.
+async function findManyIncludingDeleted(ids) {
+  const [rows] = await apiPool.query(`${WITH_DELETED} WHERE v.id IN (?) ORDER BY v.id`, [ids]);
+  return rows.map(toVariableWithDeleted);
 }
 
 async function findById(id) {
@@ -58,4 +84,4 @@ async function count() {
   return Number(rows[0].n);
 }
 
-module.exports = { list, findById, create, update, softDelete, count };
+module.exports = { list, findById, findByIdIncludingDeleted, findManyIncludingDeleted, create, update, softDelete, count };

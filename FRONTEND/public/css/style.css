@@ -103,3 +103,18 @@ dialog::backdrop { background: rgba(0, 0, 0, .65); }
   .var-value { font-size: 2.2rem; }
   .cards-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 }
+
+/* --- Page Export ---------------------------------------------------------- */
+.export-form { padding: 1rem; }
+.range-row { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: end; }
+.shortcuts { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.var-picker { border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem; max-height: 320px; overflow-y: auto; }
+.var-picker legend { float: none; width: auto; font-size: 1rem; padding: 0 .4rem; margin: 0; }
+.plc-group + .plc-group { margin-top: .75rem; }
+.plc-group-title { font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .25rem; }
+.plc-group .form-check { margin-left: .25rem; }
+.tag-deleted { color: var(--warn); font-size: .85rem; }
+.export-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.preview-wrap { position: relative; height: 360px; padding: 1rem; }
+.preview-note { color: var(--warn); padding: .5rem 1rem 0; margin: 0; }
+.panel-msg { padding: .75rem 1rem; margin: 0; color: var(--muted); }

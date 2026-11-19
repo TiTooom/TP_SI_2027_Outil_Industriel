@@ -139,6 +139,71 @@ async function main() {
   r = await call('GET', `${API}/variables/latest`);
   check('variable supprimée absente de latest', Array.isArray(r.json) && !r.json.some((x) => x.variable_id === jid));
 
+  // J4 : export CSV, arrondi, variables supprimées (mesures de test insérées via root, loin dans le passé)
+  const EX = `${API}/export.csv`;
+  const callRaw = async (url) => {
+    const res = await fetch(url);
+    return { status: res.status, headers: res.headers, buf: Buffer.from(await res.arrayBuffer()) };
+  };
+  const mkVar = async (n, extra) => (await call('POST', `${API}/variables`, { ...base, address: 20, enabled: false, name: n, ...extra })).json.id;
+  const fid = await mkVar('=e2e-formule', { unit: '+u' });
+  const qid = await mkVar('e2e-quote;"é"', { data_type: 'float32', scale: 1, unit: 'm³' });
+  const did = await mkVar('e2e-supprimee', { scale: 0.01 });
+  sql(`INSERT INTO prod.measures (variable_id, ts, value, quality) VALUES
+    (${fid},'2026-02-10 10:00:00.123',41.400000000000006,'good'),(${fid},'2026-02-10 10:00:01.000',-3.2,'good'),(${fid},'2026-02-10 10:00:02.000',NULL,'bad'),
+    (${qid},'2026-02-10 10:00:00.500',0.30000000000000004,'good'),(${did},'2026-02-10 10:00:00.000',0.07,'good'),(${did},'2026-02-10 10:00:03.000',0.1,'good')`);
+  await call('DELETE', `${API}/variables/${did}`);
+  const win = 'from=2026-02-10T10:00:00Z&to=2026-02-10T10:00:03Z';
+  const ex = await callRaw(`${EX}?variableIds=${fid},${qid},${did}&${win}`);
+  const txt = ex.buf.toString('utf8');
+  const lines = txt.split('\r\n');
+  check('export 200 text/csv', ex.status === 200 && /^text\/csv; charset=utf-8$/i.test(ex.headers.get('content-type')), String(ex.status));
+  check('export BOM UTF-8', ex.buf.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])));
+  check('export Content-Disposition', ex.headers.get('content-disposition') === 'attachment; filename="export_20260210T100000Z_20260210T100003Z.csv"', ex.headers.get('content-disposition'));
+  check('export no-store', ex.headers.get('cache-control') === 'no-store');
+  check('export en-tête français', lines[0] === '﻿Horodatage local;Horodatage UTC (ISO);Automate;Variable;Valeur;Unité;Qualité', lines[0]);
+  check('export CRLF + 6 lignes de données', lines.length === 8 && lines[7] === '', `n=${lines.length}`);
+  check('export valeur arrondie 41,4 (pas 41,400000000000006)', txt.includes(';41,4;') && !txt.includes('41,400000'));
+  check('export formule neutralisée', txt.includes(";'=e2e-formule;") && txt.includes(";'+u;") && !txt.includes(';=e2e'));
+  check('export négatif non préfixé, qualité bad vide', txt.includes(';-3,2;') && txt.includes(";'=e2e-formule;;'+u;bad"));
+  check('export quoting ; et guillemets, accents', txt.includes('"e2e-quote;""é""";0,3;m³;good'), txt);
+  check('export horodatage local Paris (+1 h en hiver)', lines[1].startsWith('2026-02-10 11:00:00;2026-02-10T10:00:00.000Z;'), lines[1]);
+  check('export variable supprimée incluse', txt.includes(';e2e-supprimee;0,07;C;good'));
+  check('export tri par ts', lines.slice(1, 7).every((l, i, a) => i === 0 || a[i - 1].split(';')[1] <= l.split(';')[1]));
+  check('export via nginx', (await callRaw(`${NGINX}/export.csv?variableIds=${fid}&${win}`)).status === 200);
+  r = await call('GET', `${EX}?variableIds=${fid}&${win}&check=1`);
+  check('export check=1 -> {rows:3}', r.status === 200 && r.json.rows === 3, JSON.stringify(r));
+  const empty = await callRaw(`${EX}?variableIds=${fid}&from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z`);
+  check('export plage vide : 200 en-tête seul', empty.status === 200 && empty.buf.toString('utf8').split('\r\n').filter(Boolean).length === 1);
+  const exBad = async (label, q, expected) => {
+    const x = await call('GET', `${EX}?${q}`);
+    check(`export ${label} -> ${expected}`, x.status === expected && x.json && typeof x.json.error === 'string', `${x.status} ${JSON.stringify(x.json)}`);
+  };
+  await exBad('plage inversée', `variableIds=${fid}&from=2026-02-11T00:00:00Z&to=2026-02-10T00:00:00Z`, 400);
+  await exBad('from == to', `variableIds=${fid}&from=2026-02-10T00:00:00Z&to=2026-02-10T00:00:00Z`, 400);
+  await exBad('plage > 31 j', `variableIds=${fid}&from=2026-01-01T00:00:00Z&to=2026-03-01T00:00:00Z`, 400);
+  await exBad('variable inconnue', `variableIds=99999&${win}`, 404);
+  await exBad('ids invalides', `variableIds=abc&${win}`, 400);
+  await exBad('ids négatif', `variableIds=-1&${win}`, 400);
+  await exBad('ids absents', win, 400);
+  await exBad('51 ids', `variableIds=${Array.from({ length: 51 }, (_, i) => i + 1).join(',')}&${win}`, 400);
+  await exBad('plage absente', `variableIds=${fid}`, 400);
+  await exBad('date sans fuseau', `variableIds=${fid}&from=2026-02-10T10:00:00&to=2026-02-10T11:00:00Z`, 400);
+  r = await call('GET', `${API}/variables?include_deleted=1`);
+  check('include_deleted : supprimée présente avec deleted_at', Array.isArray(r.json) && r.json.some((v) => v.id === did && v.deleted_at && v.plc_name));
+  r = await call('GET', `${API}/variables`);
+  check('sans include_deleted : supprimée absente', !r.json.some((v) => v.id === did));
+  r = await call('GET', `${API}/variables/${did}/measures?${win}`);
+  check("/measures d'une supprimée -> 200 arrondi", r.status === 200 && r.json.count === 2 && r.json.measures[0].value === 0.07, JSON.stringify(r.json));
+  r = await call('GET', `${API}/variables/${fid}/measures?${win}`);
+  check('/measures arrondi 41.4', r.json.measures[0].value === 41.4, JSON.stringify(r.json));
+  r = await call('GET', `${API}/variables/${did}/latest`);
+  check("/latest d'une supprimée -> 404", r.status === 404);
+  for (const m of ['POST', 'PUT', 'DELETE']) {
+    r = await call(m, EX, {});
+    check(`${m} /export.csv refusé`, r.status >= 400 && r.status < 500, String(r.status));
+  }
+
   // Lecture seule
   const before = count(1);
   for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) {
@@ -213,10 +278,10 @@ async function main() {
   check('nginx 200 après restart', r.status === 200);
 
   // Nettoyage des données de test (le compte root seul peut supprimer des mesures)
-  const mine = "SELECT id FROM config.variables WHERE name LIKE 'e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE 'e2e-%')";
+  const mine = "SELECT id FROM config.variables WHERE name LIKE '%e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE '%e2e-%')";
   sql(`DELETE FROM prod.measures WHERE variable_id IN (${mine})`);
-  sql("DELETE FROM config.variables WHERE name LIKE 'e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE 'e2e-%')");
-  sql("DELETE FROM config.plcs WHERE name LIKE 'e2e-%'");
+  sql("DELETE FROM config.variables WHERE name LIKE '%e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE '%e2e-%')");
+  sql("DELETE FROM config.plcs WHERE name LIKE '%e2e-%'");
 
   const failed = results.filter((x) => !x.ok).length;
   console.log(`\n${results.length - failed}/${results.length} OK`);

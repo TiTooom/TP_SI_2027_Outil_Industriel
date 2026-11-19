@@ -40,6 +40,13 @@ async function request(path, { method = 'GET', body, timeout = DEFAULT_TIMEOUT_M
   }
 }
 
+// URL de téléchargement (navigation native) ; check=1 : pré-vérification JSON sans CSV.
+export function exportUrl({ variableIds, from, to, check = false }) {
+  const qs = new URLSearchParams({ variableIds: variableIds.join(','), from, to });
+  if (check) qs.set('check', '1');
+  return `${BASE}/export.csv?${qs}`;
+}
+
 export const api = {
   health: () => request('/health', { timeout: 4000 }),
   listPlcs: () => request('/plcs'),
@@ -52,9 +59,11 @@ export const api = {
   updateVariable: (id, v) => request(`/variables/${id}`, { method: 'PUT', body: v }),
   deleteVariable: (id) => request(`/variables/${id}`, { method: 'DELETE' }),
   latestAll: () => request('/variables/latest'),
-  measures: (id, { from, limit }) => {
+  listVariablesWithDeleted: () => request('/variables?include_deleted=1'),
+  measures: (id, { from, to, limit }) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
     return request(`/variables/${id}/measures?${qs}`);
   },
 };

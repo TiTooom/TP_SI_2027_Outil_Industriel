@@ -6,6 +6,7 @@ const http = require('node:http');
 Object.assign(process.env, {
   DB_API_USER: 'api', DB_API_PASSWORD: 'x', DB_POLLER_USER: 'poller', DB_POLLER_PASSWORD: 'x',
 });
+const { listenOnSafePort } = require('./helpers/listen');
 const { createApp } = require('../src/app');
 
 const plc = { id: 1, name: 'Sim', host: 'simulator', port: 5020, unit_id: 1, enabled: true, variable_count: 0 };
@@ -45,7 +46,7 @@ beforeEach(() => {
 
 before(async () => {
   server = http.createServer();
-  await new Promise((r) => server.listen(0, r));
+  await listenOnSafePort(server);
   base = `http://127.0.0.1:${server.address().port}/api`;
 });
 after(() => new Promise((r) => server.close(r)));

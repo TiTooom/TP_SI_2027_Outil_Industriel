@@ -51,4 +51,4 @@ function validateMeasuresQuery(query, now = new Date()) {
   return { value: { from, to, limit: limit.value } };
 }
 
-module.exports = { validateMeasuresQuery, DEFAULT_LIMIT, MAX_LIMIT };
+module.exports = { validateMeasuresQuery, parseDate, DEFAULT_LIMIT, MAX_LIMIT };

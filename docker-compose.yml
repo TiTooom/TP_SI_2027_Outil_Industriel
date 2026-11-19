@@ -43,6 +43,10 @@ services:
       DB_POLLER_PASSWORD: ${DB_POLLER_PASSWORD}
       MODBUS_TIMEOUT_MS: ${MODBUS_TIMEOUT_MS:-3000}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
+      EXPORT_TZ: ${EXPORT_TZ:-Europe/Paris}
+      EXPORT_MAX_DAYS: ${EXPORT_MAX_DAYS:-31}
+      EXPORT_MAX_ROWS: ${EXPORT_MAX_ROWS:-500000}
+      EXPORT_TIMEOUT_S: ${EXPORT_TIMEOUT_S:-300}
       TZ: ${TZ:-Europe/Paris}
     depends_on:
       db:

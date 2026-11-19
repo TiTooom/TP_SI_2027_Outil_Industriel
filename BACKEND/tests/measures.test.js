@@ -12,19 +12,25 @@ const { validateMeasuresQuery } = require('../src/validation/measures');
 const M1 = { ts: '2026-11-19T10:00:02.123Z', value: 21.4, quality: 'good' };
 const M2 = { ts: '2026-11-19T10:00:03.123Z', value: null, quality: 'bad' };
 let rangeArgs;
+let listArgs;
+let rawValue = 21.4;
 let server;
 let base;
 
 beforeEach(() => {
   rangeArgs = null;
+  rawValue = 21.4;
+  const v = (id) => ({ id, plc_id: 1, scale: 0.1, value_offset: 0, data_type: 'int16' });
   const variableRepo = {
-    findById: async (id) => (id === 5 || id === 6 ? { id, plc_id: 1 } : null),
-    list: async () => [],
+    findById: async (id) => (id === 5 || id === 6 ? v(id) : null),
+    // 7 : variable supprimée logiquement, encore lisible pour l'historique.
+    findByIdIncludingDeleted: async (id) => (id === 5 || id === 6 || id === 7 ? v(id) : null),
+    list: async (plcId, includeDeleted) => { listArgs = { plcId, includeDeleted }; return []; },
   };
   const measureRepo = {
-    findLatest: async (id) => (id === 5 ? M1 : null),
+    findLatest: async (id) => (id === 5 ? { ...M1, value: rawValue } : null),
     findLatestOfActiveVariables: async () => [{ variable_id: 5, ...M1 }],
-    findRange: async (id, from, to, limit) => { rangeArgs = { id, from, to, limit }; return [M1, M2]; },
+    findRange: async (id, from, to, limit) => { rangeArgs = { id, from, to, limit }; return [{ ...M1, value: rawValue }, M2]; },
   };
   server.removeAllListeners('request');
   server.on('request', createApp({ plcRepo: {}, variableRepo, measureRepo, poller: {} }));
@@ -131,4 +137,25 @@ test('validateMeasuresQuery rejects impossible calendar dates', () => {
     assert.ok(validateMeasuresQuery({ from: bad }).error, bad);
   }
   assert.ok(!validateMeasuresQuery({ from: '2024-02-29T00:00:00Z', to: '2024-03-01T00:00:00Z' }).error);
+});
+
+test('latest and measures round float artefacts using scale', async () => {
+  rawValue = 41.400000000000006;
+  assert.strictEqual((await (await get('/variables/5/latest')).json()).value, 41.4);
+  const body = await (await get('/variables/5/measures')).json();
+  assert.strictEqual(body.measures[0].value, 41.4);
+  assert.strictEqual(body.measures[1].value, null);
+});
+
+test('measures of a soft-deleted variable are readable, latest is not', async () => {
+  assert.strictEqual(await status('/variables/7/measures'), 200);
+  assert.strictEqual(await status('/variables/7/latest'), 404);
+});
+
+test('GET /variables?include_deleted forwards the flag and validates it', async () => {
+  assert.strictEqual(await status('/variables?include_deleted=1'), 200);
+  assert.strictEqual(listArgs.includeDeleted, true);
+  await get('/variables');
+  assert.strictEqual(listArgs.includeDeleted, false);
+  assert.strictEqual(await status('/variables?include_deleted=yes'), 400);
 });

@@ -35,10 +35,25 @@ if (process.env.CORS_ORIGIN === '*') {
   throw new Error('CORS_ORIGIN=* is not allowed: set an explicit origin or leave it empty');
 }
 
+// Un fuseau invalide ferait échouer chaque export : on le détecte au démarrage.
+function timeZone(name, fallback) {
+  const value = process.env[name] || fallback;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: value });
+  } catch {
+    throw new Error(`Invalid time zone in ${name}: ${value}`);
+  }
+  return value;
+}
+
 const env = Object.freeze({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: port('PORT', 3000),
   corsOrigin: process.env.CORS_ORIGIN || '',
+  exportTz: timeZone('EXPORT_TZ', 'Europe/Paris'),
+  exportMaxDays: positiveInt('EXPORT_MAX_DAYS', 31),
+  exportMaxRows: positiveInt('EXPORT_MAX_ROWS', 500000),
+  exportTimeoutS: positiveInt('EXPORT_TIMEOUT_S', 300),
   modbusTimeoutMs: positiveInt('MODBUS_TIMEOUT_MS', 3000),
   db: Object.freeze({
     host: process.env.DB_HOST || 'localhost',

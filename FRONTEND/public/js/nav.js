@@ -6,10 +6,11 @@ const HEALTH_REFRESH_MS = 10000;
 const LINKS = [
   { href: 'index.html', label: 'Tableau de bord' },
   { href: 'config.html', label: 'Configuration' },
+  { href: 'export.html', label: 'Export' },
 ];
 
 function buildNav() {
-  const current = location.pathname.endsWith('config.html') ? 'config.html' : 'index.html';
+  const current = LINKS.find(({ href }) => location.pathname.endsWith(href))?.href ?? 'index.html';
   const links = LINKS.map(({ href, label }) => {
     const a = el('a', { className: 'nav-link', text: label, attrs: { href } });
     if (href === current) a.setAttribute('aria-current', 'page');

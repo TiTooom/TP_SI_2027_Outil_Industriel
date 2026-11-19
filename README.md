@@ -99,7 +99,7 @@ ou d’autres services.
 
 Cette application relève périodiquement des valeurs (température, pression…) sur des automates. Un automate est un petit calculateur industriel qui pilote une machine. Le relevé se fait en Modbus TCP, le protocole standard qui permet de lire les registres (cases numérotées) d'un automate sur le réseau. Les valeurs sont enregistrées avec leur date et leur heure dans MariaDB, puis affichées en graphiques dans le navigateur.
 
-Avancement : la configuration, le relevé et le tableau de bord temps réel sont faits. L'export CSV (jalon 4) et les comptes (jalon 5) ne sont pas encore faits.
+Avancement : la configuration, le relevé, le tableau de bord temps réel et l'export CSV sont faits. Les comptes (jalon 5) ne sont pas encore faits.
 
 ## Schéma
 
@@ -128,7 +128,7 @@ Pour repartir de zéro : `docker compose down -v` (cela efface toutes les donné
 
 1. **Configuration** : ajouter un automate (adresse IP, port, unit ID), puis les variables à surveiller (registre, adresse, type, fréquence). Un automate « Simulateur » et quatre variables de démonstration sont déjà présents au premier lancement.
 2. **Tableau de bord** : une carte et un graphique par variable, mis à jour automatiquement. Si un automate ne répond plus, son état est signalé sur les cartes de ses variables.
-3. **Export CSV** : pas encore fait (jalon 4).
+3. **Export CSV** : page « Export ». Choisir le début et la fin de la plage (ou un raccourci : 1 h, 24 h, 7 j), cocher les variables, puis cliquer sur « Télécharger CSV ». Le fichier sépare les colonnes par un point-virgule et utilise la virgule pour les décimales : il s'ouvre directement dans Excel en français. Une plage ne peut pas dépasser 31 jours, et un export est limité à 500 000 lignes (l'application le signale avant le téléchargement). L'aperçu graphique de la page Export est indicatif : il ne montre que les 7 derniers jours de la plage.
 
 ## Accès depuis un autre PC du réseau
 

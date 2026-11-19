@@ -165,7 +165,7 @@ Les tables `app.*` et `prod.measures` existent, mais l'application ne les rempli
 
 ## 5. Fonctionnalités réalisées
 
-### 5.1 Ce qui fonctionne (jalons J1 à J3)
+### 5.1 Ce qui est réalisé (jalons J1 à J4)
 
 | Fonctionnalité | État |
 |---|---|
@@ -180,6 +180,10 @@ Les tables `app.*` et `prod.measures` existent, mais l'application ne les rempli
 | Port de la base non publié sur le réseau | Fait, vérifié |
 | Page « Configuration » : ajouter, modifier et supprimer les automates et les variables depuis le navigateur | Écrit, test de démonstration à faire |
 | Tableau de bord temps réel : un graphique Chart.js par variable active, avec l'état de chaque automate | Écrit, test de démonstration à faire |
+| Relevé Modbus TCP périodique, avec délai d'attente et nouvelle tentative ; une panne d'automate ne bloque pas le backend (J2) | Écrit, test de démonstration à faire |
+| API de configuration des automates et des variables (ajout, modification, suppression logique) (J2) | Écrit, test de démonstration à faire |
+| Simulateur Modbus TCP factice dans un conteneur, pour tester sans matériel (J2) | Écrit, test de démonstration à faire |
+| Export CSV par plage de dates depuis la page « Export » : séparateur `;`, décimales à la virgule, compatible Excel français, plage limitée à 31 jours et 500 000 lignes (J4) | Écrit. 15 tests automatiques passent (`node --test`). Test de démonstration à faire |
 
 Les tests réellement effectués le 19/11 dans Docker sont les suivants :
 
@@ -202,13 +206,9 @@ Les captures de la page d'accueil (base connectée puis base coupée) sont prés
 
 Les fonctionnalités suivantes sont prévues. Elles ne sont **pas** réalisées à ce jour.
 
-- **Jalon J2 (à venir) :** API de configuration des automates et des variables (ajout, modification, suppression) ; lecture Modbus périodique avec délai d'attente et nouvelle tentative ; planification dynamique des lectures, sans redémarrer le serveur ; simulateur Modbus TCP dans un conteneur ; état de connexion de chaque automate.
-- **Jalon J3 (à venir) :** interface de configuration des variables ; graphiques temps réel avec Chart.js.
-- **Jalon J4 (à venir) :** consultation de l'historique ; export CSV par plage de dates.
 - **Jalon J5 (à venir) :** comptes utilisateurs, connexion, rôles (administrateur, ingénieur, technicien, lecteur) ; équipes ; protection des routes côté serveur.
 - **Jalon J6 (à venir) :** tableau de bord configurable par glisser-déposer, en mode personnel ou en mode équipe.
 
-Tant que J2 n'est pas terminé, aucune mesure n'est enregistrée et la page d'accueil est la seule interface.
 
 ## 6. Conclusion et retour d'expérience
 

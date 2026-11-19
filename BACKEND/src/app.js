@@ -3,6 +3,7 @@ const express = require('express');
 const env = require('./config/env');
 const healthRouter = require('./routes/health');
 const { createPlcsRouter } = require('./routes/plcs');
+const { createExportRouter } = require('./routes/export');
 const { createVariablesRouter } = require('./routes/variables');
 
 // Les dépendances par défaut sont chargées à la demande : les tests injectent des mocks
@@ -36,6 +37,7 @@ function createApp(deps = defaultDeps()) {
   app.use('/api/health', healthRouter);
   app.use('/api/plcs', createPlcsRouter(deps));
   app.use('/api/variables', createVariablesRouter(deps));
+  app.use('/api/export.csv', createExportRouter(deps));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Export — Supervision Process</title>
+  <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav id="app-nav"></nav>
+
+  <main class="container-xl py-4">
+    <h1 class="h4 mb-3">Export et historique</h1>
+    <div class="alert alert-success" id="flash-ok" role="status" hidden></div>
+    <div class="alert alert-danger" id="flash-error" role="alert" hidden></div>
+
+    <form id="export-form" class="panel export-form mb-4" novalidate>
+      <div class="range-row mb-2">
+        <div>
+          <label class="form-label" for="range-from">Début (heure locale)</label>
+          <input class="form-control" type="datetime-local" id="range-from" step="1" required>
+        </div>
+        <div>
+          <label class="form-label" for="range-to">Fin (heure locale)</label>
+          <input class="form-control" type="datetime-local" id="range-to" step="1" required>
+        </div>
+        <div class="shortcuts" role="group" aria-label="Raccourcis de plage (fin = maintenant)">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-hours="1">1 h</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-hours="24">24 h</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-hours="168">7 j</button>
+        </div>
+      </div>
+      <p class="text-secondary small mb-3">Plage maximale : 31 jours. Les heures sont celles de ce navigateur ; le CSV contient l'heure locale du serveur et l'heure UTC.</p>
+
+      <fieldset class="var-picker mb-3" aria-describedby="var-hint">
+        <legend>Variables</legend>
+        <div class="d-flex gap-2 mb-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all">Tout cocher</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="select-none">Tout décocher</button>
+          <span class="text-secondary small align-self-center" id="var-hint" role="status"></span>
+        </div>
+        <div id="var-list"></div>
+        <p class="panel-msg" id="var-state" role="status">Chargement…</p>
+      </fieldset>
+
+      <div class="export-actions">
+        <button type="button" class="btn btn-outline-primary" id="preview-btn">Aperçu graphique</button>
+        <button type="submit" class="btn btn-primary" id="download-btn">Télécharger CSV</button>
+        <span class="text-secondary" id="action-state" role="status"></span>
+      </div>
+    </form>
+
+    <section class="panel" aria-labelledby="preview-title">
+      <div class="panel-head"><h2 class="h5 mb-0" id="preview-title">Aperçu</h2></div>
+      <p class="preview-note" id="preview-note" role="status" hidden></p>
+      <p class="empty-state" id="preview-state" role="status">Choisissez une plage et des variables, puis cliquez sur « Aperçu graphique ».</p>
+      <div class="preview-wrap" id="preview-wrap" hidden>
+        <canvas id="preview-chart" role="img" aria-label="Historique des variables sélectionnées"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script src="vendor/chartjs/chart.umd.js"></script>
+  <script type="module" src="js/export.js"></script>
+</body>
+</html>
