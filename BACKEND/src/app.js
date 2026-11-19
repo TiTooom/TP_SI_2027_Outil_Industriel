@@ -34,7 +34,8 @@ function createApp(deps = defaultDeps()) {
   const app = express();
 
   app.disable('x-powered-by');
-  // Un seul proxy (nginx) : il écrase X-Forwarded-For, donc un client ne peut pas forger son IP.
+  // Un seul proxy (nginx) : il écrase X-Forwarded-For. En accès direct sur le port 3000 publié,
+  // l'en-tête peut être forgé ; le quota par nom d'utilisateur en limite l'impact.
   app.set('trust proxy', 1);
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -56,7 +57,7 @@ function createApp(deps = defaultDeps()) {
   }
 
   app.use('/api/health', healthRouter);
-  // Matrice des droits (docs/CONTRACTS.md) : tout sauf /health et /auth/login exige une session.
+  // Matrice des droits (voir le tableau des rôles du README) : tout sauf /health et /auth/login exige une session.
   const authenticate = createAuthenticate(deps.sessionService);
   const admin = [authenticate, requireRole('admin')];
   app.use('/api/auth', createAuthRouter(deps));

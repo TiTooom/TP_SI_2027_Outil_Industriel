@@ -126,7 +126,7 @@ export async function mountNav({ minRole = 'viewer' } = {}) {
       const retry = el('button', { className: 'btn btn-outline-light btn-sm ms-3', text: 'Réessayer', attrs: { type: 'button' } });
       retry.addEventListener('click', () => location.reload());
       const msg = el('div', { className: 'panel-msg', attrs: { id: 'app-nav', role: 'alert' } }, [
-        el('span', { text: `Vérification de la session impossible : ${err.message}` }),
+        el('span', { text: `Vérification de la session impossible : ${errorMessage(err)}` }),
         retry,
       ]);
       document.getElementById('app-nav').replaceWith(msg);

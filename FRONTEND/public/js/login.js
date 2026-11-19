@@ -16,9 +16,6 @@ function showError(message) {
   box.hidden = false;
 }
 
-// Déjà connecté : inutile d'afficher le formulaire. Toute erreur (401, réseau) laisse le formulaire disponible.
-api.meQuiet().then(() => location.replace(nextPage())).catch(() => {});
-
 $('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const username = $('username').value.trim();

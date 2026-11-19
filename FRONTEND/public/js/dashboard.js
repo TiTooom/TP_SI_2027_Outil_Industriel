@@ -2,6 +2,7 @@
 // Un seul minuteur de données (latest + status) ; la liste des variables est relue
 // périodiquement pour détecter ajouts, suppressions et modifications.
 import { api, serverNow } from './api.js';
+import { errorMessage } from './messages.js';
 import { mountNav } from './nav.js';
 import { initLayout } from './layout.js';
 import { STATES, el } from './dom.js';
@@ -37,7 +38,7 @@ function cssVar(name) {
 }
 
 function createChart(canvas, variable) {
-  const gridColor = cssVar('--border');
+  const gridColor = 'rgba(255,255,255,.08)';
   const muted = cssVar('--muted');
   return new Chart(canvas, {
     type: 'line',
@@ -54,8 +55,8 @@ function createChart(canvas, variable) {
         tooltip: { callbacks: { title: (items) => new Date(items[0].parsed.x).toLocaleTimeString('fr-FR') } },
       },
       scales: {
-        x: { type: 'linear', grid: { color: gridColor }, ticks: { color: muted, maxTicksLimit: 5, callback: (v) => formatClock(v) } },
-        y: { grid: { color: gridColor }, ticks: { color: muted, maxTicksLimit: 4 } },
+        x: { type: 'linear', grid: { color: gridColor }, ticks: { color: muted, font: { size: 12 }, maxTicksLimit: 5, callback: (v) => formatClock(v) } },
+        y: { grid: { color: gridColor }, ticks: { color: muted, font: { size: 12 }, maxTicksLimit: 4 } },
       },
     },
   });
@@ -310,7 +311,7 @@ async function tick() {
     setError('tick-error', null);
     $('last-update').textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR')}`;
   } catch (err) {
-    setError('tick-error', `Données indisponibles : ${err.message} Nouvelle tentative automatique…`);
+    setError('tick-error', `Données indisponibles : ${errorMessage(err)} Nouvelle tentative automatique…`);
   } finally {
     ticking = false;
   }
@@ -323,7 +324,7 @@ async function listLoop(gen) {
     setError('list-error', null);
   } catch (err) {
     if (!cards.size) $('loading-state').textContent = 'Connexion au serveur…';
-    setError('list-error', `Liste des variables indisponible : ${err.message} Nouvelle tentative automatique…`);
+    setError('list-error', `Liste des variables indisponible : ${errorMessage(err)} Nouvelle tentative automatique…`);
   }
   if (gen === generation && !document.hidden) listTimer = setTimeout(() => listLoop(gen), cards.size ? LIST_REFRESH_MS : RETRY_MS);
 }

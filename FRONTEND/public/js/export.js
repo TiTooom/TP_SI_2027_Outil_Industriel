@@ -1,6 +1,7 @@
 // Page Export : sélection plage + variables, aperçu Chart.js, téléchargement CSV.
 // Le CSV n'est jamais chargé en mémoire : fetch(check=1) valide, puis navigation native.
-import { api, exportUrl } from './api.js';
+import { api, ApiError, exportUrl } from './api.js';
+import { errorMessage } from './messages.js';
 import { mountNav } from './nav.js';
 import { el } from './dom.js';
 
@@ -104,7 +105,7 @@ async function loadVariables() {
     renderVariables();
   } catch (err) {
     $('var-state').hidden = false;
-    $('var-state').textContent = `Impossible de charger les variables : ${err.message}`;
+    $('var-state').textContent = `Impossible de charger les variables : ${errorMessage(err)}`;
   }
 }
 
@@ -142,11 +143,11 @@ async function checkExport(params) {
     const res = await fetch(exportUrl({ variableIds: params.ids, from: params.from, to: params.to, check: true }),
       { cache: 'no-store', signal: controller.signal, headers: { Accept: 'application/json' } });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error ?? `Erreur serveur (HTTP ${res.status})`);
+    if (!res.ok) throw new ApiError(data?.error ?? `Erreur serveur (HTTP ${res.status})`, res.status);
     return data.rows;
   } catch (err) {
-    if (err.name === 'AbortError') throw new Error('Délai dépassé : le serveur ne répond pas.');
-    if (err instanceof TypeError) throw new Error('Serveur injoignable.');
+    if (err.name === 'AbortError') throw new ApiError('Délai dépassé : le serveur ne répond pas.');
+    if (err instanceof TypeError) throw new ApiError('Serveur injoignable.');
     throw err;
   } finally {
     clearTimeout(timer);
@@ -166,7 +167,7 @@ async function onDownload(event) {
     // Navigation native : le navigateur gère le flux (Content-Disposition: attachment).
     window.location.assign(exportUrl({ variableIds: params.ids, from: params.from, to: params.to }));
   } catch (err) {
-    flash('error', err.message);
+    flash('error', errorMessage(err));
   } finally {
     setBusy(false);
   }
@@ -204,7 +205,7 @@ function cssVar(name) {
 }
 
 function drawChart(datasets, xMin, xMax) {
-  const grid = cssVar('--border');
+  const grid = 'rgba(255,255,255,.08)';
   const muted = cssVar('--muted');
   if (chart) chart.destroy();
   chart = new Chart($('preview-chart'), {
@@ -219,8 +220,8 @@ function drawChart(datasets, xMin, xMax) {
       },
       scales: {
         x: { type: 'linear', min: xMin, max: xMax, grid: { color: grid },
-          ticks: { color: muted, maxTicksLimit: 8, callback: (v) => dateTimeFmt.format(v) } },
-        y: { grid: { color: grid }, ticks: { color: muted } },
+          ticks: { color: muted, font: { size: 12 }, maxTicksLimit: 8, callback: (v) => dateTimeFmt.format(v) } },
+        y: { grid: { color: grid }, ticks: { color: muted, font: { size: 12 } } },
       },
     },
   });
@@ -253,7 +254,7 @@ async function onPreview() {
         if (res.measures.length >= PREVIEW_LIMIT) truncated = true;
         results.set(id, res.measures);
       } catch (err) {
-        failures.push(`${byId.get(id)?.name ?? id} : ${err.message}`);
+        failures.push(`${byId.get(id)?.name ?? id} : ${errorMessage(err)}`);
       }
     });
     if (run !== previewRun) return;

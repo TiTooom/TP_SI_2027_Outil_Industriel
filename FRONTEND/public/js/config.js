@@ -143,7 +143,7 @@ async function loadAll() {
     statuses = new Map(s.map((x) => [x.plc_id, x]));
     $('flash-error').hidden = true;
   } catch (err) {
-    flash('error', `Chargement impossible : ${err.message}`);
+    flash('error', `Chargement impossible : ${errorMessage(err)}`);
     for (const id of ['plc-state', 'var-state']) $(id).textContent = 'Données indisponibles.';
     return;
   }
@@ -306,7 +306,7 @@ function confirmDelete(text, action, doneMessage) {
       await loadAll();
     } catch (err) {
       // 409 : automate avec variables, etc. Le message serveur est affiché tel quel.
-      flash('error', err.status === 409 ? `Suppression impossible : ${err.message}` : errorMessage(err));
+      flash('error', err.status === 409 ? `Suppression impossible : ${errorMessage(err)}` : errorMessage(err));
     }
   }, { once: true });
   dialog.showModal();

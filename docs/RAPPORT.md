@@ -1,92 +1,109 @@
 # Relevé de données process : outil de supervision d'automates
 
-**Rapport de TP — Développement d'une solution de relevé de données process**
+**Rapport de TP : Développement d'une solution de relevé de données process**
 
+- **Nom d'équipe :** <!-- À COMPLÉTER : nom d'équipe, s'il y en a un -->
 - **Membres :** LASFER Amine & JOLY Quentin
 - **Formation :** I5 FISA PAUC
 - **Année :** 2026/2027
-- **Date :** à determiner 
+- **Date :** <!-- À COMPLÉTER : date de rendu (08/12/2026 prévu) -->
 
 <!-- saut de page -->
 
 ## 1. Contexte et objectif
 
-Les outils de supervision industrielle, ces écrans qui montrent en direct l'état d'une machine, sont souvent vendus sous licence et livrés avec du matériel dédié. Pour une petite équipe de maintenance, le coût et la rigidité de ces logiciels sont un vrai problème : il est difficile de les adapter à un besoin précis.
+Les outils de supervision industrielle, ces écrans qui montrent en direct l'état d'une machine, sont souvent vendus sous licence et livrés avec du matériel dédié. Pour une petite équipe de maintenance, le coût et la rigidité de ces logiciels posent problème : il est difficile de les adapter à un besoin précis.
 
-Le sujet demande donc un prototype de supervision open source, qui tourne sur le réseau local de l'entreprise et qui permet de :
+Le sujet demande donc un prototype de supervision open source, qui tourne sur le réseau local de l'entreprise. Un **automate** (en anglais PLC) est un petit calculateur industriel qui pilote une machine et mesure des grandeurs comme la température ou la pression. Ces grandeurs sont rangées dans des **registres**, des cases numérotées qu'un logiciel extérieur peut lire. Le protocole **Modbus TCP** est la méthode standard pour lire ces registres à travers le réseau.
 
-- configurer les adresses IP des automates et les variables à surveiller, depuis une page web ;
+Notre application doit permettre de :
+
+- configurer les adresses des automates et les variables à surveiller, depuis une page web ;
 - afficher les valeurs en temps réel sous forme de graphiques ;
 - exporter les mesures d'une plage de dates au format CSV ;
 - installer l'ensemble rapidement, grâce à Docker.
 
-Un **automate** (en anglais PLC, *programmable logic controller*) est un petit calculateur industriel qui pilote une machine et mesure des grandeurs comme la température ou la pression. Ces grandeurs sont rangées dans des **registres**, des cases numérotées qu'un logiciel extérieur peut lire. Le protocole **Modbus TCP** est la méthode standard pour lire ces registres à travers le réseau.
+Le sujet ne demandait que ce socle. Nous avons choisi d'ajouter ensuite les comptes et les rôles, les équipes, puis un tableau de bord configurable, en gardant comme priorité une démonstration qui fonctionne à chaque essai.
 
-Ce que nous devions réaliser : le socle demandé par le sujet (gestion des variables, lecture périodique, historique horodaté, graphiques, export CSV, tout dans Docker). Les comptes utilisateurs, les équipes et le tableau de bord configurable viennent ensuite, seulement si le socle fonctionne parfaitement en démonstration. C'est notre priorité : une démo qui marche à chaque essai.
-
-Au moment de la rédaction (19/11/2026), seul le premier jalon, celui des fondations, est terminé. La suite de ce rapport distingue clairement ce qui fonctionne de ce qui est prévu.
+Au moment de la rédaction (19/11/2026), les jalons J1 à J6 sont livrés. Ils ont été testés dans Docker et dans un navigateur sans fenêtre. Les tests sur un vrai automate et depuis un autre poste du réseau restent à faire (section 5.3).
 
 ## 2. Liens
 
-- Dépôt GitHub : https://github.com/TiTooom/TP_SI_2027_Outil_Industriel
-- Vidéo de démonstration : <!-- À COMPLÉTER : lien de la vidéo, à ajouter avant le 08/12 -->
+- **Dépôt GitHub :** https://github.com/TiTooom/TP_SI_2027_Outil_Industriel
+- **Mode d'emploi :** le fichier [README.md](../README.md) du dépôt (lancement, utilisation, branchement d'un automate).
+- **Vidéo de démonstration :** <!-- À COMPLÉTER : lien de la vidéo, à ajouter avant le 08/12 -->
 
 ## 3. Architecture technique
 
 ### 3.1 Schéma de fonctionnement
 
-Le navigateur ne parle jamais directement à la base de données. Toutes les demandes passent par le serveur web nginx, puis par le backend, qui est le seul à lire et écrire dans MariaDB.
+Le navigateur ne parle jamais directement à la base de données. Toutes les demandes passent par nginx, puis par le backend. Le backend contient aussi le **service de relevé** : une tâche qui interroge les automates à intervalles réguliers et écrit les mesures dans la base.
 
 ```mermaid
 flowchart LR
-    NAV["Navigateur<br/>(poste du LAN)"] -->|"HTTP, port 8080"| NGX["nginx<br/>conteneur frontend"]
-    NGX -->|"pages HTML, CSS, JS"| NAV
-    NGX -->|"/api/... (relais)"| API["Backend<br/>Node.js + Express<br/>conteneur backend"]
-    API -->|"compte api"| DB[("MariaDB<br/>schémas config, prod, app")]
-    API -->|"compte poller"| DB
-    API -.->|"Modbus TCP, port 502<br/>(prévu, jalon J2)"| PLC["Automate ou<br/>simulateur"]
+    NAV["Navigateur<br/>(PC du LAN)"] -->|"port 8080<br/>cookie de session"| NGX["nginx<br/>conteneur frontend"]
+    NAV -->|"port 3000<br/>API directe"| API
+    NGX -->|"/api/... (relais)"| API["API Express<br/>sessions et droits"]
+    subgraph BACK["conteneur backend"]
+        API
+        POLL["Service de relevé<br/>une tâche par variable"]
+    end
+    API -->|"compte api"| DB[("MariaDB<br/>config, prod, app")]
+    POLL -->|"compte poller<br/>INSERT seulement"| DB
+    POLL -->|"Modbus TCP, port 502"| PLC["Vrai automate"]
+    POLL -->|"Modbus TCP, port 5020"| SIM["Simulateur<br/>conteneur simulator"]
 ```
-
-Le trait en pointillés signale ce qui n'est pas encore construit : la lecture Modbus des automates arrive au jalon J2.
 
 ### 3.2 Rôle de chaque conteneur
 
-Un **conteneur** Docker est une petite boîte isolée qui contient un programme et tout ce dont il a besoin pour tourner. Notre projet en compte trois, décrits dans un seul fichier, `docker-compose.yml`, à la racine.
+Un **conteneur** Docker est une petite boîte isolée qui contient un programme et tout ce dont il a besoin. Le projet en compte quatre, décrits dans un seul fichier, `docker-compose.yml`, à la racine.
 
-| Conteneur | Image utilisée | Rôle | Port |
+| Conteneur | Image | Rôle | Port |
 |---|---|---|---|
-| `db` | `mariadb:11.4` (image standard) | Stocke la configuration, les mesures et les comptes | Aucun : réseau interne seulement |
-| `backend` | Image construite à partir de notre `Dockerfile` (base `node:22-alpine`) | API Express, lecture des automates (J2), contrôle de l'état | 3000, publié sur le réseau local |
-| `frontend` | `nginx:1.27-alpine` (image standard) | Sert les pages HTML, CSS, JS et transmet les appels `/api` au backend | 8080, publié sur le réseau local |
+| `db` | `mariadb:11.4` (image standard) | Stocke la configuration, les mesures, les comptes et les sessions | Aucun : réseau interne |
+| `backend` | Notre `Dockerfile`, base `node:22.21.1-alpine3.22` | API, relevé Modbus, connexion, droits | 3000, publié sur le LAN |
+| `frontend` | `nginx:1.27-alpine` (image standard) | Sert les pages HTML, CSS, JS et transmet `/api` au backend | 8080, publié sur le LAN |
+| `simulator` | Notre `Dockerfile`, base `node:22.21.1-alpine3.22` | Automate Modbus factice : température, pression, débit, niveau | 5020, interne seulement |
 
-L'ordre de démarrage est important : le backend attend que la base réponde (contrôle de santé « healthy »), puis nginx démarre. Le simulateur d'automate, prévu au jalon J2, s'ajoutera comme un quatrième conteneur. Remplacer le simulateur par un vrai automate ne demandera que de changer l'adresse de l'automate dans la configuration.
+Le backend attend que la base soit prête (contrôle de santé « healthy ») avant de démarrer. Le simulateur ne bloque pas le backend : si l'automate factice tombe, l'application continue de tourner. Pour brancher un vrai automate, il suffit de changer son adresse dans la configuration.
 
-Un point de sécurité reste ouvert. Le sujet demande que le backend soit accessible depuis le réseau, donc le port 3000 est aussi publié directement. Une personne du réseau peut donc appeler l'API sans passer par nginx. Pour cette raison, les routes de modification devront être protégées côté serveur au jalon J5.
+### 3.3 Connexion et sécurité
 
-### 3.3 Choix des technologies
+- **Mot de passe** : haché avec scrypt, un algorithme intégré à Node.js, qui ne demande aucune compilation sous Alpine. Il doit faire au moins 10 caractères.
+- **Session** : à la connexion, le serveur crée un jeton aléatoire de 256 bits, envoyé dans un cookie `HttpOnly` et `SameSite=Strict` (le JavaScript de la page ne peut pas le lire). La base ne garde que son empreinte SHA-256. La session expire après 8 h sans activité, ou 24 h au maximum.
+- **Anti brute-force** : 5 échecs pour un couple (adresse IP, nom), 20 échecs pour un même nom, ou 30 pour une même adresse IP, bloquent la connexion pendant 15 minutes.
+- **Droits** : le backend vérifie le rôle à chaque route. Les boutons masqués dans la page ne sont qu'un confort ; la vraie barrière est côté serveur.
+- **Requêtes** : toutes les requêtes SQL sont paramétrées, et nginx envoie une politique de contenu (CSP) qui limite les scripts autorisés.
+
+### 3.4 Choix des technologies
 
 | Technologie | Rôle dans le projet | Pourquoi ce choix |
 |---|---|---|
-| HTML, CSS, JavaScript | Pages de l'interface | Imposés par le sujet. Nous n'utilisons pas de framework lourd (React, Vue) : les fichiers sont servis tels quels, sans étape de compilation. |
-| Node.js et Express | Backend : routes qui répondent à des adresses web (une « API REST ») | Le même langage (JavaScript) côté serveur et côté navigateur. Express est simple et très répandu. |
-| MariaDB | Base de données SQL | Base libre, proche de MySQL. Elle gère les schémas, les clés étrangères, les contraintes `CHECK` et le type JSON. |
-| nginx | Serveur web et relais (« reverse proxy ») | Léger et rapide. Il fait croire au navigateur qu'il n'y a qu'une seule adresse : pas de problème d'autorisation entre sites (CORS). |
-| Docker et Docker Compose | Lancement de tout le projet | Une seule commande installe les trois services, avec le même environnement sur chaque poste. Sous Windows, Docker Desktop utilise WSL2, un sous-système Linux intégré à Windows. |
-| mysql2 | Pilote qui relie Node.js à MariaDB | Permet des requêtes paramétrées : les valeurs sont séparées du texte SQL, ce qui évite l'injection SQL. |
-| dotenv | Lecture du fichier `.env` | Les mots de passe ne sont pas écrits dans le code. Le fichier `.env` n'est pas publié sur GitHub. |
-| Bootstrap | Mise en forme de la page | Composants et grille prêts à l'emploi. Les fichiers sont copiés dans le projet, car le réseau d'une usine n'a pas forcément accès à Internet. |
-| nodemon | Relance automatique du serveur pendant le développement | Évite de redémarrer Node à la main à chaque modification. |
-| modbus-serial, node-cron, Chart.js, export-to-csv | Lecture Modbus (la bibliothèque notée « Modul Serial » dans le sujet), tâches périodiques, graphiques, export CSV | **Pas encore installées.** Elles arrivent aux jalons J2 à J4. |
+| HTML, CSS, JavaScript | Pages de l'interface | Imposés par le sujet. Pas de framework (React, Vue) : les fichiers sont servis tels quels, sans compilation. |
+| Node.js et Express | Backend : routes qui répondent à des adresses web (une « API REST ») | Le même langage des deux côtés. Express est simple et très répandu. |
+| modbus-serial | Lecture des automates en Modbus TCP (la bibliothèque notée « Modul Serial » dans le sujet) | Elle couvre les fonctions de lecture 1 à 4. L'application ne l'utilise jamais pour écrire. |
+| mysql2 | Pilote qui relie Node.js à MariaDB | Requêtes paramétrées, et un pool de connexions par compte SQL. |
+| MariaDB | Base de données SQL | Base libre. Elle gère les schémas, les clés étrangères, les contraintes `CHECK` et le type JSON. |
+| nginx | Serveur web et relais | Le navigateur ne voit qu'une seule adresse, donc pas de problème CORS. nginx retrouve le backend après un redémarrage. |
+| Bootstrap 5.3.3, Chart.js 4.4.7 | Mise en forme et graphiques | Copiés dans le projet : le réseau d'une usine n'a pas forcément accès à Internet. |
+| dotenv | Lecture du fichier `.env` | Les mots de passe ne sont jamais écrits dans le code ni publiés sur GitHub. |
+| Docker Compose | Lancement des quatre services | Une seule commande, le même environnement sur chaque poste. Sous Windows, Docker Desktop passe par WSL2. |
+| nodemon | Relance automatique pendant le développement | Déclaré pour le développement seulement : il n'est pas dans l'image de production. |
+
+### 3.5 Écarts avec le sujet
+
+Deux bibliothèques du sujet ne sont pas utilisées, pour des raisons techniques.
+
+- **node-cron est remplacé par `setInterval`.** node-cron planifie à la minute, avec des motifs comme `*/5 * * * *`. Nos fréquences sont en secondes, et elles varient d'une variable à l'autre. Nous créons un minuteur par variable. Quand une variable change, son minuteur est remplacé : aucun redémarrage n'est nécessaire.
+- **export-to-csv est remplacé par un générateur maison.** Cette bibliothèque construit le fichier entier en mémoire. Avec 500 000 lignes, cela aurait saturé le serveur. Notre générateur produit le CSV par blocs, au fur et à mesure de la lecture dans la base.
 
 ## 4. Modèle relationnel
 
-Les données sont rangées dans **trois schémas** (des espaces séparés à l'intérieur de la même base) :
+Les données sont rangées dans **trois schémas**, c'est-à-dire trois espaces séparés dans la même base :
 
 - `config` : ce que l'on surveille (automates et variables) ;
-- `prod` : ce qui a été mesuré, avec la date et l'heure de chaque mesure ;
-- `app` : qui utilise l'outil (comptes, équipes, tableaux de bord).
-
-Le diagramme ci-dessous décrit ces tables. Il est écrit en texte (langage Mermaid) : GitHub le transforme en schéma automatiquement.
+- `prod` : ce qui a été mesuré, avec la date et l'heure ;
+- `app` : qui utilise l'outil (comptes, équipes, sessions, tableaux de bord).
 
 ```mermaid
 erDiagram
@@ -94,6 +111,7 @@ erDiagram
     VARIABLES ||--o{ MEASURES : "historise"
     USERS ||--o{ TEAM_MEMBERS : ""
     TEAMS ||--o{ TEAM_MEMBERS : ""
+    USERS ||--o{ SESSIONS : "ouvre"
     USERS |o--o{ DASHBOARDS : "mode perso"
     TEAMS |o--o{ DASHBOARDS : "mode équipe"
 
@@ -118,6 +136,7 @@ erDiagram
         int frequency_s ">= 1"
         bool enabled
         timestamp deleted_at "suppression logique"
+        tinyint active_key "colonne générée : 1 si active, NULL si supprimée"
     }
     MEASURES {
         bigint id PK
@@ -141,6 +160,13 @@ erDiagram
         int team_id PK, FK
         int user_id PK, FK
     }
+    SESSIONS {
+        char id PK "SHA-256 du jeton"
+        int user_id FK
+        datetime created_at
+        datetime last_seen_at
+        datetime expires_at
+    }
     DASHBOARDS {
         int id PK
         varchar name
@@ -152,95 +178,70 @@ erDiagram
 
 Nous avons fait les choix suivants.
 
-- **Trois schémas.** Séparer la configuration, les mesures et les comptes rend le modèle plus lisible. Les droits d'accès se donnent aussi par schéma.
-- **Les mesures sont en lecture seule pour l'application.** C'est la règle la plus importante du projet. Le compte `api` (utilisé par le site) ne peut que lire `prod`. Le compte `poller` (le service de relevé) peut seulement ajouter des lignes dans `prod.measures`. Aucun des deux ne peut modifier ni supprimer une mesure. La règle est donc imposée par la base elle-même : même une erreur dans le code de l'API ne peut pas effacer l'historique. Nous l'avons vérifié dans MariaDB (voir section 5).
-- **Suppression logique des variables.** Une variable n'est jamais effacée réellement : on remplit la colonne `deleted_at`. La clé étrangère entre `measures` et `variables` est en `RESTRICT`, ce qui bloque la suppression physique tant qu'il existe des mesures. L'historique reste donc consultable.
-- **Un index `(variable_id, ts)`.** Il sert aux deux usages principaux : afficher les dernières valeurs d'une variable et exporter une plage de dates. Sans index, chaque requête lirait toute la table, ce qui devient lent quand les relevés s'accumulent.
-- **Une lecture en échec est gardée.** Quand un automate ne répond pas, on enregistre `value = NULL` avec `quality = 'bad'` au lieu de ne rien écrire. Les coupures apparaîtront ainsi sur les graphiques.
-- **Des contraintes `CHECK`.** La fréquence doit être d'au moins 1 seconde, le port doit être positif, et un tableau de bord doit appartenir soit à un utilisateur, soit à une équipe, jamais aux deux ni à aucun. La base refuse les données incohérentes, même si le code se trompe.
-- **Dates en UTC.** La connexion Node.js est réglée en UTC. La conversion en heure locale se fera à l'affichage.
-- **Disposition du tableau de bord en JSON.** Les positions des éléments glissés-déposés seront stockées dans une colonne `layout` de type JSON. Cette partie n'est pas encore utilisée.
+- **Les mesures sont en lecture seule pour l'application.** C'est la règle la plus importante. Le compte `api`, utilisé par le site, ne peut que lire `prod`. Le compte `poller`, qui fait le relevé, ne peut qu'ajouter des lignes dans `prod.measures`. Aucun des deux ne peut modifier ni supprimer une mesure. La règle est écrite dans la base : une erreur dans le code de l'API ne pourrait pas effacer l'historique. Nous l'avons vérifiée dans MariaDB.
+- **Suppression logique des variables.** La colonne `deleted_at` marque une variable comme supprimée, sans l'effacer. La clé étrangère vers `measures` est en `RESTRICT` : l'historique reste donc consultable et exportable.
+- **Nom unique parmi les variables actives.** Une colonne calculée `active_key` vaut 1 tant que la variable n'est pas supprimée. Un nom supprimé peut ainsi être réutilisé.
+- **Une lecture en échec est gardée.** La mesure est enregistrée avec `value = NULL` et `quality = 'bad'`. Les coupures apparaissent ainsi dans l'historique et dans l'export.
+- **Des contraintes `CHECK`.** La fréquence doit être d'au moins 1 seconde, le port doit être positif, et un tableau de bord appartient soit à un utilisateur, soit à une équipe, jamais aux deux.
+- **Des index.** `measures (variable_id, ts)` sert aux graphiques et à l'export par plage de dates. `sessions (user_id)` et `sessions (expires_at)` servent à la connexion et à la purge. Le nom d'un tableau est unique pour chaque propriétaire.
+- **Sessions en base.** Une session peut être révoquée à tout moment, par exemple au changement de mot de passe. Les sessions expirées sont supprimées chaque heure.
+- **Tableaux de bord en JSON.** La colonne `layout` contient la disposition (version 1, liste de cartes avec leur taille). Un propriétaire garde au plus 20 tableaux, et un tableau contient au plus 50 cartes.
+- **Dates en UTC.** La base travaille en UTC. Le fichier CSV ajoute une colonne d'heure locale (fuseau `Europe/Paris`).
 
-Les tables `app.*` et `prod.measures` existent, mais l'application ne les remplit pas encore : les comptes et les mesures arrivent aux jalons suivants. Les données de démonstration (un automate « Simulateur » et quatre variables : température, pression, débit, niveau) sont déjà en place.
+**Migrations.** `db/init` ne s'exécute que sur un volume vide. Une base créée avant J5 et J6 reçoit donc à la main `db/migrations/002` (index des tableaux) et `003` (table des sessions), décrits dans le README.
 
 ## 5. Fonctionnalités réalisées
 
-### 5.1 Ce qui est réalisé (jalons J1 à J4)
+### 5.1 Ce qui est livré
 
-| Fonctionnalité | État |
-|---|---|
-| Lancement des trois conteneurs avec une seule commande | Fait, testé |
-| Création automatique de la base au premier démarrage (3 schémas, tables, comptes, données de démo) | Fait, testé |
-| Droits SQL minimaux pour les comptes `api` et `poller` | Fait, testé |
-| Contraintes de cohérence de la base (`CHECK`) | Fait, testé |
-| Route `/api/health` : état de l'application et des deux connexions à la base | Fait, testé |
-| Page d'accueil « État du système » : trois pastilles mises à jour toutes les 5 secondes | Fait, testé |
-| Accès à l'application par nginx (port 8080) et à l'API (port 3000) | Fait, testé depuis la machine hôte |
-| Conservation des données après redémarrage (volume Docker) | Fait, testé |
-| Port de la base non publié sur le réseau | Fait, vérifié |
-| Page « Configuration » : ajouter, modifier et supprimer les automates et les variables depuis le navigateur | Écrit, test de démonstration à faire |
-| Tableau de bord temps réel : un graphique Chart.js par variable active, avec l'état de chaque automate | Écrit, test de démonstration à faire |
-| Relevé Modbus TCP périodique, avec délai d'attente et nouvelle tentative ; une panne d'automate ne bloque pas le backend (J2) | Écrit, test de démonstration à faire |
-| API de configuration des automates et des variables (ajout, modification, suppression logique) (J2) | Écrit, test de démonstration à faire |
-| Simulateur Modbus TCP factice dans un conteneur, pour tester sans matériel (J2) | Écrit, test de démonstration à faire |
-| Export CSV par plage de dates depuis la page « Export » : séparateur `;`, décimales à la virgule, compatible Excel français, plage limitée à 31 jours et 500 000 lignes (J4) | Écrit. 15 tests automatiques passent (`node --test`). Test de démonstration à faire |
-| Tableau de bord configurable : tableaux personnels ou d'équipe, cartes à glisser-déposer ou à monter et descendre, taille de chaque carte, droits selon le rôle (J6) | Écrit, test de démonstration à faire |
+| Jalon | Ce qui fonctionne | Comment nous l'avons vérifié |
+|---|---|---|
+| J1 | Quatre conteneurs, base en trois schémas, comptes SQL à droits minimaux, contraintes `CHECK`, page d'état | Démarrage Docker, droits SQL testés par requêtes, données conservées après redémarrage |
+| J2 | Ajout, modification et suppression d'automates et de variables ; relevé périodique ; état « hors ligne » ; simulateur | Tests unitaires du backend (124 à la fin de J6) et du simulateur (2) ; arrêt puis reprise du simulateur dans Docker |
+| J3 | Page Configuration ; tableau de bord temps réel avec un graphique par variable | Chrome sans fenêtre : courbes qui avancent, variable ajoutée sans rechargement, automate coupé puis repris |
+| J4 | Export CSV par plage de dates, compatible Excel en français (séparateur `;`, virgule décimale) | 450 000 lignes exportées (39 Mo), 4 exports simultanés (le quatrième reçoit une réponse 429), abandons de téléchargement sans fuite |
+| J5 | Connexion, quatre rôles, page Administration, équipes, « Mon compte », anti brute-force | Matrice rôles × routes (348 vérifications sur les ports 8080 et 3000), parcours complet dans Chrome |
+| J6 | Tableaux personnels ou d'équipe ; cartes déplacées au glisser-déposer ou avec les boutons ▲ ▼ ; trois tailles | Chrome sans fenêtre : 22 contrôles sur 23 (le 23e signalait les 401 attendus de la page de connexion) |
 
-Les tests réellement effectués le 19/11 dans Docker sont les suivants :
+Les 237 vérifications de bout en bout dans Docker viennent du journal de QA du projet. Le code des tests est dans `BACKEND/tests`.
 
-- la base s'initialise avec ses trois scripts ;
-- les conteneurs `db` et `backend` passent à l'état « healthy » ;
-- `/api/health` répond directement et à travers nginx ;
-- le compte `api` ne peut ni ajouter ni supprimer une mesure, le compte `poller` ne peut ni modifier ni supprimer de mesure, ni écrire dans la configuration, ni lire le schéma `app` ;
-- les contraintes `CHECK` refusent les valeurs interdites ;
-- les données restent présentes après un redémarrage.
+Voici le tableau de bord temps réel : une carte et un graphique par variable.
 
-Trois tests automatiques sont écrits avec le test intégré de Node.js (`npm test` dans le dossier `BACKEND`). Ils vérifient que l'API répond « degraded » avec le code 503 quand la base est absente, qu'une route inconnue renvoie une erreur JSON 404, et qu'un corps JSON mal formé renvoie 400.
+![Tableau de bord temps réel](../ASSETS/dashboard.png)
 
-Les captures de la page d'accueil (base connectée puis base coupée) sont présentées dans le README du dépôt.
+### 5.2 Ce qui n'est pas fait
 
-<!-- À COMPLÉTER (J3) : une capture du tableau de bord temps réel, plus parlante pour le rapport (ASSETS/dashboard.png) -->
+- **Un vrai automate.** Nous avons testé l'application uniquement avec le simulateur, qui parle le même protocole Modbus TCP.
+- **L'accès depuis un autre poste.** Nous avons vérifié l'accès par l'adresse IP de la machine hôte, pas depuis un autre PC. Le pare-feu Windows reste à régler.
+- **Les écritures vers l'automate, les alertes (seuils, courriels) et le HTTPS.** Les écritures sont exclues volontairement. Les alertes ne faisaient pas partie du socle. Le HTTPS est en limite ci-dessous.
 
-**Accès depuis un autre poste du réseau.** Pour l'instant, nous n'avons testé l'accès que depuis la machine hôte, en utilisant son adresse IP du réseau local. Le profil réseau Windows était en mode « Public », ce qui bloque les connexions entrantes. Il faut le passer en « Privé » ou adapter la règle du pare-feu pour les ports 8080 et 3000. Ce test reste à faire.
+### 5.3 Limites connues
 
-### 5.2 Jalon J5 : comptes, rôles et équipes
-
-Ces fonctionnalités sont écrites. Elles attendent encore leur test de démonstration.
-
-- **Connexion par session** : nom d'utilisateur et mot de passe, puis un cookie de session. La session expire après 8 h sans activité et 24 h au maximum (valeurs réglables dans `.env`).
-- **Anti brute-force** : après plusieurs échecs, la connexion est bloquée pendant 15 minutes pour ce couple IP et nom d'utilisateur.
-- **Premier administrateur** : créé au démarrage à partir de `ADMIN_USERNAME` et `ADMIN_PASSWORD`, si la base ne contient aucun compte.
-- **Mon compte** : chacun peut changer son mot de passe.
-- **Quatre rôles** (lecteur, technicien, ingénieur, administrateur), vérifiés par le backend sur chaque route. Les boutons du site sont aussi masqués selon le rôle.
-- **Page Administration** (administrateur seul) : créer, supprimer un compte, changer son rôle, réinitialiser son mot de passe.
-- **Équipes** : créer, renommer, supprimer une équipe, ajouter ou retirer des membres. Une équipe peut avoir ses propres tableaux de bord (jalon J6) : les membres les voient, et seul le rôle ingénieur peut les modifier.
-- **API protégée** : toutes les routes de l'API, y compris celles du port 3000 publié sur le réseau, exigent une session, sauf la connexion et `/api/health`.
-
-### 5.3 Ce qui n'est pas encore fait
-
-Le point suivant reste ouvert.
-
-- **Jalon J6 :** les tableaux de bord configurables, personnels et d'équipe, sont implémentés. Le test de démonstration est en cours.
-
+- **Pas de HTTPS.** Le site tourne en HTTP sur le réseau local. Le mot de passe et le cookie de session circulent en clair : une personne du réseau qui écoute le trafic peut récupérer une session. Le cookie n'a pas l'attribut `Secure`, sans quoi il ne passerait pas en HTTP.
+- **Verrouillage de compte.** Vingt échecs sur un même nom bloquent ce nom pendant 15 minutes, pour tout le monde. Un tiers du réseau peut donc bloquer le compte administrateur. Le compteur repart à zéro au redémarrage du backend.
+- **Port 3000 publié.** L'API est joignable directement, sans passer par nginx. Toutes les routes exigent une session, mais le port reste exposé. En accès direct, l'en-tête `X-Forwarded-For` peut être falsifié : le compteur par adresse IP devient alors peu fiable, seul le compteur par nom reste efficace.
+- **Ordre des mots 32 bits.** Seul l'ordre ABCD est lu correctement. Un automate qui envoie les mots en CDAB donne des valeurs fausses. Le contournement consiste à lire chaque registre dans une variable `uint16`.
+- **Mesures espacées pendant une panne.** Quand un automate ne répond plus, chaque lecture attend le délai de 3 secondes (`MODBUS_TIMEOUT_MS`). L'état « hors ligne » reste visible.
+- **Tests non faits.** Pas de test sur un vrai automate, depuis un autre poste du réseau, sur Firefox ou sur tablette. Le glisser-déposer a été vérifié avec des événements simulés, pas avec une vraie souris. L'ouverture du CSV dans Excel français n'a pas été vérifiée.
 
 ## 6. Conclusion et retour d'expérience
 
 ### 6.1 Difficultés rencontrées
 
-- **Installation de Docker et de WSL2.** Au départ, ni Docker ni WSL2 n'étaient installés sur le poste de développement. Docker Desktop s'appuie sur WSL2, et l'installation a demandé du temps et un redémarrage. <!-- À COMPLÉTER : durée réelle et difficultés rencontrées sur votre poste -->
-- **Séparation des droits SQL.** Les comptes `api` et `poller` sont créés par un script d'initialisation qui ne s'exécute qu'au premier démarrage, c'est-à-dire quand le volume de la base est vide. Modifier un droit ou un mot de passe ne suffit donc pas : il faut recréer la base avec `docker compose down -v`, ce qui efface les données. Nous avons aussi dû écrire ce script en shell (et non en simple fichier SQL) pour lire les mots de passe depuis les variables d'environnement.
-- **Fins de ligne Windows et Linux.** Les fichiers écrits sous Windows se terminent par CRLF. Dans le conteneur Linux, le shell ne lit pas correctement ces fins de ligne et le script d'initialisation échouait. Nous avons ajouté un fichier `.gitattributes` qui impose le format LF pour les scripts, les fichiers SQL, les `Dockerfile` et la configuration nginx.
+- **Docker et WSL2.** Ni Docker ni WSL2 n'étaient installés au départ. L'installation a demandé du temps et un redémarrage. <!-- À COMPLÉTER : durée réelle et difficultés sur votre poste -->
+- **Initialisation de la base.** Les comptes SQL ne sont créés qu'au premier démarrage. Modifier un droit ou un mot de passe demande de recréer le volume (qui efface les données) ou une migration à la main. Nous avons écrit ce script en shell pour lire les mots de passe depuis l'environnement.
+- **Fins de ligne.** Les fichiers écrits sous Windows se terminent par CRLF, que le shell Linux du conteneur ne lit pas. Le fichier `.gitattributes` impose LF pour les scripts, le SQL, les Dockerfile et nginx.
 
 <!-- À COMPLÉTER : autre difficulté marquante de votre binôme, si elle existe -->
 
 ### 6.2 Ce que nous avons appris
 
-Le premier jalon nous a appris à découper un projet en services indépendants, chacun avec son rôle. Nous avons aussi compris qu'une règle de sécurité (ici, l'interdiction de modifier les mesures) est beaucoup plus solide quand elle est écrite dans la base que lorsqu'elle repose seulement sur le code. Enfin, un test vérifié dans un vrai conteneur vaut mieux qu'une relecture du code : plusieurs points ont été validés seulement après avoir lancé Docker.
+Le premier jalon nous a appris à découper le projet en services indépendants. Une règle de sécurité, comme l'interdiction de modifier les mesures, est bien plus solide quand la base la fait respecter, et non seulement le code. Enfin, un test lancé dans un vrai conteneur ou dans un vrai navigateur vaut mieux qu'une relecture : plusieurs points n'ont été validés qu'ainsi.
 
 <!-- À COMPLÉTER : ce que vous avez appris personnellement sur le travail en binôme et sur les outils -->
 
 ### 6.3 Ce que nous ferions autrement
 
-<!-- À COMPLÉTER : votre ressenti personnel, en 3 à 5 phrases, sur ce qui vous a le plus surpris ou gêné -->
+Nous aurions dû tester plus tôt l'accès depuis un autre poste : c'est le point le plus important pour la démonstration, et nous l'avons repoussé à la fin. Nous aurions aussi prévu une migration de base dès la première version des tables, pour ne pas avoir à recréer le volume.
 
-Une idée à reprendre dans votre propre formulation : le simulateur d'automate aurait pu être construit avant la base de données, car il permet de tester la lecture Modbus sans matériel. Nous avons préféré poser les fondations d'abord ; ce choix reste discutable.
+<!-- À COMPLÉTER : votre ressenti personnel, en 3 à 5 phrases, sur ce qui vous a le plus surpris ou gêné -->

@@ -77,7 +77,6 @@ export const api = {
   login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password }, noRedirect: true }),
   logout: () => request('/auth/logout', { method: 'POST', noRedirect: true }),
   me: () => request('/auth/me'),
-  meQuiet: () => request('/auth/me', { noRedirect: true }), // sonde de session sans redirection (page de login)
   changePassword: (current_password, new_password) => request('/auth/password', { method: 'POST', body: { current_password, new_password } }),
   listUsers: () => request('/users'),
   createUser: (u) => request('/users', { method: 'POST', body: u }),

@@ -97,100 +97,103 @@ ou d’autres services.
 
 ## Relevé de données process
 
-Cette application relève périodiquement des valeurs (température, pression…) sur des automates. Un automate est un petit calculateur industriel qui pilote une machine. Le relevé se fait en Modbus TCP, le protocole standard qui permet de lire les registres (cases numérotées) d'un automate sur le réseau. Les valeurs sont enregistrées avec leur date et leur heure dans MariaDB, puis affichées en graphiques dans le navigateur.
+L'application relève à intervalles réguliers des valeurs (température, pression…) sur des automates, en Modbus TCP. Chaque valeur est enregistrée avec sa date et son heure dans MariaDB, puis affichée en graphique dans le navigateur. Une plage de dates s'exporte en CSV, qui s'ouvre directement dans Excel en français.
 
-Avancement : la configuration, le relevé, le tableau de bord temps réel et l'export CSV sont faits. Les comptes, les rôles et les équipes (jalon 5) sont faits et testés en Docker. Le tableau de bord configurable (jalon 6) est écrit : il attend son test de démonstration.
+Le projet est un travail d'étudiants. Il tourne entièrement dans Docker, sur un réseau local, sans logiciel propriétaire.
 
 ## Schéma
 
 ```mermaid
 flowchart LR
-    NAV["Navigateur"] -->|"port 8080"| NGX["nginx (frontend)"]
+    NAV["Navigateur"] -->|"port 8080"| NGX["nginx<br/>(frontend)"]
     NGX -->|"/api/..."| API["Backend<br/>Node.js + Express"]
     API -->|"SQL"| DB[("MariaDB")]
-    API -->|"Modbus TCP, port 502"| PLC["Automate ou simulateur"]
+    API -->|"Modbus TCP, port 5020<br/>simulateur (démo)"| SIM["Simulateur"]
+    API -->|"Modbus TCP, port 502<br/>vrai automate"| PLC["Automate"]
 ```
 
 ## Lancer le projet
 
-Prérequis : Docker Desktop (avec WSL2 sous Windows), ou Docker Engine + Docker Compose v2.
+Prérequis : Docker Desktop (Windows, avec WSL2) ou Docker Engine avec Docker Compose v2.
 
 ```bash
-cp .env.example .env          # sous PowerShell : Copy-Item .env.example .env
+cp .env.example .env          # PowerShell : Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-Remplacer les mots de passe dans `.env` avant le premier lancement. Puis ouvrir http://localhost:8080.
+Avant le premier lancement, remplacer tous les mots de passe dans `.env`. Ensuite, ouvrir **http://localhost:8080**.
 
-Pour repartir de zéro : `docker compose down -v` (cela efface toutes les données).
+### Première connexion
+
+Le compte administrateur est créé au premier démarrage, avec `ADMIN_USERNAME` et `ADMIN_PASSWORD` définis dans `.env`. Connectez-vous avec ces valeurs, puis changez le mot de passe dans « Mon compte ».
 
 ### Mise à jour d'une base déjà créée
 
-`db/init` ne s'exécute que sur un volume vide. Sur une base existante, appliquer le script de migration à la main (le mot de passe est lu dans le conteneur, il n'apparaît pas dans la commande) :
+Les scripts de `db/init` ne tournent que sur une base neuve. Si la base existe depuis avant une mise à jour, appliquer les fichiers de `db/migrations/` dans l'ordre des numéros (`002` puis `003`). Exemple pour la table des sessions, la base tournant :
 
 ```bash
-cat db/migrations/002_dashboards_unique.sql | docker compose exec -T db sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'
+docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"' < db/migrations/003_sessions.sql
 ```
 
-Sous PowerShell : `Get-Content db/migrations/002_dashboards_unique.sql | docker compose exec -T db sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`
-
-## Première connexion
-
-Au premier démarrage, un compte administrateur est créé avec `ADMIN_USERNAME` et `ADMIN_PASSWORD` (dans `.env`). Se connecter, puis changer ce mot de passe dans « Mon compte ». Si la base existait avant l'ajout des comptes, lancer une fois `docker compose down -v` : la table des sessions n'est créée que sur une base vide (cela efface les données).
+Sous PowerShell, la redirection `<` n'existe pas : utiliser Git Bash. Ne pas lancer `docker compose down -v` pour cela, il efface le volume et toutes les mesures. Détail dans [db/migrations/README.md](db/migrations/README.md).
 
 ## Utiliser l'application
 
-1. **Configuration** : ajouter un automate (adresse IP, port, unit ID), puis les variables à surveiller (registre, adresse, type, fréquence). Un automate « Simulateur » et quatre variables de démonstration sont déjà présents au premier lancement.
-2. **Tableau de bord** : une carte et un graphique par variable, mis à jour automatiquement. Si un automate ne répond plus, son état est signalé sur les cartes de ses variables.
-3. **Tableaux configurables** : dans le menu « Tableau », choisir un tableau personnel (visible par vous seul) ou d'équipe (visible par ses membres). « Modifier » permet de glisser-déposer les cartes (ou de les monter et descendre avec ▲ ▼), de choisir leur taille, puis « Enregistrer ». Droits : seul le propriétaire modifie un tableau personnel ; un tableau d'équipe se lit par tous les membres et se modifie à partir du rôle ingénieur.
-4. **Export CSV** : page « Export ». Choisir le début et la fin de la plage (ou un raccourci : 1 h, 24 h, 7 j), cocher les variables, puis cliquer sur « Télécharger CSV ». Le fichier sépare les colonnes par un point-virgule et utilise la virgule pour les décimales : il s'ouvre directement dans Excel en français. Une plage ne peut pas dépasser 31 jours, et un export est limité à 500 000 lignes (l'application le signale avant le téléchargement). L'aperçu graphique de la page Export est indicatif : il ne montre que les 7 derniers jours de la plage.
+1. **Ajouter une variable** : page *Configuration*. Choisir l'automate (le « Simulateur » est déjà présent), puis le registre, l'adresse, le type et la fréquence. Aucun redémarrage n'est nécessaire.
+2. **Voir le graphique** : page *Tableau de bord*. Une carte et un graphique par variable, mis à jour seuls. Si un automate ne répond plus, ses cartes le signalent.
+3. **Exporter en CSV** : page *Export*. Choisir la plage de dates et les variables, puis « Télécharger CSV ». Une plage est limitée à 31 jours.
 
-### Comptes et rôles
-
-| Rôle | Peut faire |
-|---|---|
-| viewer | Voir le tableau de bord, la configuration et exporter en CSV |
-| technician | Activer ou désactiver une variable, changer sa fréquence |
-| engineer | Ajouter, modifier, supprimer automates et variables |
-| admin | Gérer les comptes et les équipes |
-
-Chaque rôle garde les droits du rôle précédent. Les droits sont vérifiés côté serveur.
-
-## Accès depuis un autre PC du réseau
-
-Remplacer `localhost` par l'adresse IP du PC qui fait tourner Docker (commande `ipconfig`), par exemple http://192.168.1.20:8080. Il faut autoriser les ports 8080 et 3000 dans le pare-feu Windows, et passer le réseau en profil « Privé ». Ce test n'est pas encore fait de notre côté.
-
-## Structure du projet
-
-```
-BACKEND/    API Express et service de relevé Modbus
-FRONTEND/   pages HTML, CSS et JavaScript servies par nginx
-SIMULATOR/  automate Modbus factice (température, pression…)
-db/         scripts SQL d'initialisation de MariaDB
-ASSETS/     captures d'écran
-docs/       rapport technique
-docker-compose.yml, .env.example
-```
-
-## Technologies
-
-- **Backend** : Node.js et Express (API), modbus-serial (lecture Modbus), mysql2 (accès à MariaDB).
-- **Base de données** : MariaDB, dans trois schémas séparés (`config`, `prod`, `app`).
-- **Frontend** : HTML, CSS et JavaScript sans framework, Bootstrap et Chart.js. Les bibliothèques sont copiées dans le projet, car le réseau d'une usine n'a pas forcément accès à Internet.
-- **Déploiement** : Docker Compose avec nginx (serveur web et relais vers l'API).
-
-Sécurité : l'API du port 3000 est protégée comme le site. Il faut une session (connexion) pour l'utiliser, sauf pour la page d'état `/api/health` et la connexion elle-même.
+Le sélecteur « Tableau » de la page *Tableau de bord* permet aussi de créer des tableaux personnels ou d'équipe, dont les cartes se déplacent par glisser-déposer (bouton « Modifier »).
 
 ## Aperçu
 
-Premières captures, avec l'état du système (jalon 1) :
+![Tableau de bord temps réel](ASSETS/dashboard.png)
 
-![Page d'accueil : tout est connecté](ASSETS/accueil-ok.png)
+![Mode édition d'un tableau](ASSETS/dashboard-edition.png)
 
-![Page d'accueil : base de données coupée](ASSETS/accueil-bdd-coupee.png)
+![Page Configuration](ASSETS/config.png)
 
-<!-- TODO (humain) : capturer le tableau de bord temps réel, enregistrer l'image dans ASSETS/dashboard.png, puis ajouter ici : ![Tableau de bord temps réel](ASSETS/dashboard.png) -->
+![Page Export](ASSETS/export.png)
 
-## Rapport technique
+![Page Administration](ASSETS/admin.png)
 
-Le détail (choix techniques, modèle de données, difficultés) est dans [docs/RAPPORT.md](docs/RAPPORT.md).
+![Page de connexion](ASSETS/login.png)
+
+## Accéder depuis un autre PC
+
+Remplacer `localhost` par l'adresse IP du PC qui fait tourner Docker (commande `ipconfig`), par exemple `http://192.168.1.20:8080`. Il faut autoriser le port 8080 dans le pare-feu Windows (et le port 3000 si l'API est appelée directement), puis passer le réseau en profil « Privé ».
+
+## Brancher un vrai automate
+
+Fiche à suivre pour chaque variable :
+
+- **Adresse** : l'adresse saisie est l'adresse protocole, en base 0. Le registre 40001 de la notice s'écrit donc `0`.
+- **Type de registre** : `holding` = FC3 (4xxxx), `input` = FC4 (3xxxx), `coil` = FC1 (0xxxx), `discrete` = FC2 (1xxxx). Les types `coil` et `discrete` sont des bits : leur type de donnée est `bool`.
+- **32 bits** : une valeur sur 2 registres se lit seulement en ordre ABCD (mot de poids fort en premier). Un automate qui envoie en CDAB est mal lu : contournement, lire chaque registre dans une variable `uint16`.
+- **Valeur affichée** = brut × `scale` + `value_offset`. Exemple : un registre en dixièmes de °C a `scale = 0,1`.
+- **Connexion** : lecture seule, port 502 (ou celui de l'automate), unit ID souvent `1`.
+- **Avant tout** : tester l'adresse avec **modpoll** depuis le PC qui fait tourner Docker.
+
+## Rôles
+
+| Rôle | Peut faire |
+|---|---|
+| Lecteur (`viewer`) | Voir le tableau de bord et la configuration, exporter en CSV |
+| Technicien (`technician`) | En plus : activer ou désactiver une variable, changer sa fréquence |
+| Ingénieur (`engineer`) | En plus : ajouter, modifier, supprimer automates et variables, modifier les tableaux d'équipe |
+| Administrateur (`admin`) | En plus : gérer les comptes et les équipes |
+
+Les droits sont vérifiés par le serveur, pas seulement par la page.
+
+## Réglages
+
+Ports, mots de passe, limites d'export et durée des sessions se règlent dans `.env`, copié depuis `.env.example`, qui les commente un par un. Les mots de passe n'ont pas de valeur par défaut.
+
+## Écarts avec le sujet
+
+Deux bibliothèques prévues par le sujet ont été remplacées, pour une raison précise :
+
+- **node-cron est remplacé par `setInterval`.** node-cron travaille à la minute, sur des motifs fixes. Nos fréquences sont en secondes (1 s, 7 s…) : un minuteur par variable est plus exact, et il se replanifie sans redémarrage.
+- **export-to-csv est remplacé par un générateur maison.** Cette bibliothèque construit tout le fichier en mémoire. Notre générateur écrit le CSV ligne par ligne, ce qui permet des exports jusqu'à 500 000 lignes.
+
+Le détail (choix techniques, modèle de données, limites connues) est dans [docs/RAPPORT.md](docs/RAPPORT.md).
