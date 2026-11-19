@@ -1,0 +1,52 @@
+/* Thème industriel sombre, lisible en salle de contrôle. */
+:root {
+  --bg: #12151a;
+  --surface: #1b2028;
+  --border: #2c333e;
+  --text: #e6e9ee;
+  --muted: #8f99a6;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --ko: #f85149;
+  --unknown: #6e7681;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.status-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  height: 100%;
+}
+
+.status-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-value {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 0.35rem;
+}
+
+.dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: var(--unknown);
+  flex: none;
+}
+
+.dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.dot.ko { background: var(--ko); box-shadow: 0 0 8px var(--ko); }

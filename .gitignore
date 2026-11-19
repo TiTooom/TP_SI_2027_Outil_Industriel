@@ -1,0 +1,15 @@
+node_modules/
+.env
+*.log
+.DS_Store
+
+# Outillage Claude Code : local uniquement, ne fait pas partie du livrable
+.claude/
+CLAUDE.md
+
+# docs/ : seul le rapport est publié (plan, contrats, notes restent en local)
+docs/*
+!docs/RAPPORT.md
+
+# Sujet du TP (document de l'enseignant)
+*.pdf

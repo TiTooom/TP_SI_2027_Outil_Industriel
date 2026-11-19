@@ -1,0 +1,80 @@
+# Supervision process — orchestration des services.
+# Lancement : cp .env.example .env  puis  docker compose up -d --build
+
+name: supervision
+
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?définir MARIADB_ROOT_PASSWORD dans .env}
+      # Lues par db/init/02_users.sh pour créer les comptes applicatifs
+      DB_API_USER: ${DB_API_USER:-api}
+      DB_API_PASSWORD: ${DB_API_PASSWORD:?définir DB_API_PASSWORD dans .env}
+      DB_POLLER_USER: ${DB_POLLER_USER:-poller}
+      DB_POLLER_PASSWORD: ${DB_POLLER_PASSWORD:?définir DB_POLLER_PASSWORD dans .env}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # Pas de "ports" : la base n'est jamais exposée sur le réseau local.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [supervision]
+
+  backend:
+    build: ./BACKEND
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_API_USER: ${DB_API_USER:-api}
+      DB_API_PASSWORD: ${DB_API_PASSWORD}
+      DB_POLLER_USER: ${DB_POLLER_USER:-poller}
+      DB_POLLER_PASSWORD: ${DB_POLLER_PASSWORD}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      TZ: ${TZ:-Europe/Paris}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:${API_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks: [supervision]
+
+  frontend:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./FRONTEND/public:/usr/share/nginx/html:ro
+      - ./FRONTEND/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+    ports:
+      - "0.0.0.0:${APP_PORT:-8080}:80"
+    networks: [supervision]
+
+  # J2 : simulateur Modbus TCP (remplacé par le vrai automate en changeant l'hôte dans l'UI)
+  # simulator:
+  #   build: ./SIMULATOR
+  #   restart: unless-stopped
+  #   networks: [supervision]
+
+volumes:
+  db_data:
+
+networks:
+  supervision:
+    driver: bridge

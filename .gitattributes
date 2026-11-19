@@ -1,0 +1,6 @@
+* text=auto
+# Les scripts exécutés dans les conteneurs Linux doivent rester en LF (un CRLF casse bash).
+*.sh text eol=lf
+*.sql text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf

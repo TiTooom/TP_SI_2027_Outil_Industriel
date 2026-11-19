@@ -92,3 +92,39 @@ prises en compte sans nécessiter de redémarrage du serveur.
 6. Déploiement et Accessibilité : Le backend est déployé dans un conteneur Docker et configuré pour écouter
 sur un port spécifique. Il est accessible depuis d’autres machines du réseau pour communiquer avec le frontend
 ou d’autres services.
+
+# Démarrage rapide
+
+**Prérequis :** Docker Desktop (avec WSL2 sous Windows) ou Docker Engine + Docker Compose v2.
+
+```bash
+cp .env.example .env          # puis remplacer les mots de passe
+docker compose up -d --build
+```
+
+| Service | URL |
+|---|---|
+| Application | http://localhost:8080 |
+| API (santé) | http://localhost:3000/api/health |
+
+La base MariaDB n'est pas exposée hors du réseau Docker. Au premier démarrage, elle crée les schémas `config`, `prod` et `app`, les comptes SQL `api` et `poller` et des données de démonstration (`db/init/`).
+
+**Accès depuis un autre poste du réseau local :** remplacer `localhost` par l'adresse IP de la machine hôte (`ipconfig` sous Windows). Sous Windows, autoriser les ports 8080 et 3000 en entrée dans le pare-feu.
+
+**Réinitialiser la base** (efface toutes les données) : `docker compose down -v`.
+
+# Aperçu
+
+La page d'accueil affiche l'état de l'application et des deux connexions à la base de données. Elle se met à jour toutes les 5 secondes.
+
+![Page d'accueil : tout est connecté](ASSETS/accueil-ok.png)
+
+Si la base de données s'arrête (`docker compose stop db`), l'application reste en ligne et signale le problème. Tout revient au vert quand la base redémarre.
+
+![Page d'accueil : base de données coupée](ASSETS/accueil-bdd-coupee.png)
+
+La même information est disponible en JSON sur `http://localhost:3000/api/health` :
+
+![Réponse de /api/health](ASSETS/api-health.png)
+
+Rapport technique : [docs/RAPPORT.md](docs/RAPPORT.md).
