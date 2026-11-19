@@ -1,4 +1,4 @@
-// Lecture et validation centralisées de la configuration (voir docs/CONTRACTS.md).
+// Lecture et validation centralisées de la configuration (variables documentées dans README.md et .env.example).
 // En conteneur, les variables viennent de docker-compose ; en local, de BACKEND/.env ou du .env racine.
 const path = require('path');
 require('dotenv').config({
@@ -22,10 +22,24 @@ function port(name, fallback) {
   return value;
 }
 
+function positiveInt(name, fallback) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`Invalid value in ${name}: ${process.env[name]}`);
+  }
+  return value;
+}
+
+// Un joker ouvrirait l'API à n'importe quel site visité depuis le LAN (requêtes cross-origin du navigateur).
+if (process.env.CORS_ORIGIN === '*') {
+  throw new Error('CORS_ORIGIN=* is not allowed: set an explicit origin or leave it empty');
+}
+
 const env = Object.freeze({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: port('PORT', 3000),
   corsOrigin: process.env.CORS_ORIGIN || '',
+  modbusTimeoutMs: positiveInt('MODBUS_TIMEOUT_MS', 3000),
   db: Object.freeze({
     host: process.env.DB_HOST || 'localhost',
     port: port('DB_PORT', 3306),

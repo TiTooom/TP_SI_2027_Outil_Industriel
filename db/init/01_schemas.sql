@@ -32,10 +32,12 @@ CREATE TABLE IF NOT EXISTS config.variables (
   frequency_s   INT UNSIGNED NOT NULL DEFAULT 5,
   enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
   deleted_at    TIMESTAMP    NULL DEFAULT NULL COMMENT 'Suppression logique : conserve l''historique',
+  -- 1 si active, NULL si supprimée : NULL est distinct dans un UNIQUE, d'où unicité du nom parmi les actives seulement
+  active_key    TINYINT      AS (IF(deleted_at IS NULL, 1, NULL)) PERSISTENT,
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_variables_plc FOREIGN KEY (plc_id) REFERENCES config.plcs(id) ON DELETE RESTRICT,
-  CONSTRAINT uq_variables_plc_name UNIQUE (plc_id, name),
+  CONSTRAINT uq_variables_plc_name UNIQUE (plc_id, name, active_key),
   CONSTRAINT ck_variables_frequency CHECK (frequency_s >= 1),
   INDEX idx_variables_active (deleted_at, enabled)
 ) ENGINE=InnoDB;

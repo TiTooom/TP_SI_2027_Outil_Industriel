@@ -7,6 +7,8 @@ services:
   db:
     image: mariadb:11.4
     restart: unless-stopped
+    # Sessions en UTC : cohérent avec NOW() / TIMESTAMP stockés
+    command: --default-time-zone=+00:00
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?définir MARIADB_ROOT_PASSWORD dans .env}
       # Lues par db/init/02_users.sh pour créer les comptes applicatifs
@@ -39,11 +41,15 @@ services:
       DB_API_PASSWORD: ${DB_API_PASSWORD}
       DB_POLLER_USER: ${DB_POLLER_USER:-poller}
       DB_POLLER_PASSWORD: ${DB_POLLER_PASSWORD}
+      MODBUS_TIMEOUT_MS: ${MODBUS_TIMEOUT_MS:-3000}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
       TZ: ${TZ:-Europe/Paris}
     depends_on:
       db:
         condition: service_healthy
+      # service_started : un simulateur en panne ne doit pas bloquer le backend
+      simulator:
+        condition: service_started
     ports:
       - "0.0.0.0:${API_PORT:-3000}:3000"
     healthcheck:
@@ -66,11 +72,20 @@ services:
       - "0.0.0.0:${APP_PORT:-8080}:80"
     networks: [supervision]
 
-  # J2 : simulateur Modbus TCP (remplacé par le vrai automate en changeant l'hôte dans l'UI)
-  # simulator:
-  #   build: ./SIMULATOR
-  #   restart: unless-stopped
-  #   networks: [supervision]
+  # Simulateur Modbus TCP (remplacé par le vrai automate en changeant l'hôte dans l'UI).
+  # Aucun port publié : joignable uniquement par le backend via le réseau Docker.
+  simulator:
+    build: ./SIMULATOR
+    restart: unless-stopped
+    environment:
+      SIM_PORT: 5020
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('net').connect(5020,'127.0.0.1');s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks: [supervision]
 
 volumes:
   db_data:

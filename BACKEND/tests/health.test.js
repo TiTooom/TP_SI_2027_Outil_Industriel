@@ -12,14 +12,14 @@ Object.assign(process.env, {
   DB_POLLER_PASSWORD: 'test',
 });
 
-const app = require('../src/app');
+const { createApp } = require('../src/app');
 const { closePools } = require('../src/db/pools');
 
 let server;
 let baseUrl;
 
 before(async () => {
-  server = app.listen(0);
+  server = createApp().listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
