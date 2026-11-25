@@ -112,20 +112,54 @@ flowchart LR
     API -->|"Modbus TCP, port 502<br/>vrai automate"| PLC["Automate"]
 ```
 
-## Lancer le projet
+## Quick start
 
-Prérequis : Docker Desktop (Windows, avec WSL2) ou Docker Engine avec Docker Compose v2.
+À faire une seule fois : installer **Docker Desktop** (Windows, avec WSL2) ou Docker Engine avec Docker Compose v2. Rien d'autre : ni Node.js ni MariaDB ne sont à installer.
 
-```bash
-cp .env.example .env          # PowerShell : Copy-Item .env.example .env
-docker compose up -d --build
-```
+1. **Démarrer Docker Desktop** et attendre que son icône indique « Engine running ».
+2. **Ouvrir un terminal à la racine du projet** (le dossier qui contient `docker-compose.yml`).
+3. **Créer le fichier `.env`** :
+   ```powershell
+   Copy-Item .env.example .env     # Git Bash / Linux / macOS : cp .env.example .env
+   ```
+4. **Éditer `.env`** : remplacer chaque valeur `change-me-...` par un vrai mot de passe (4 au total : root, api, poller, admin). Sans apostrophe ni guillemet. `ADMIN_PASSWORD` fait 10 caractères au minimum. Ne plus modifier les mots de passe SQL ensuite (voir « Dépannage »).
+5. **Lancer** :
+   ```bash
+   docker compose up -d --build
+   ```
+   Le premier lancement télécharge les images et prend quelques minutes.
+6. **Vérifier** que les 4 services sont `healthy` ou `Up` :
+   ```bash
+   docker compose ps
+   ```
+7. **Ouvrir http://localhost:8080** et se connecter avec `ADMIN_USERNAME` / `ADMIN_PASSWORD` du `.env`.
 
-Avant le premier lancement, remplacer tous les mots de passe dans `.env`. Ensuite, ouvrir **http://localhost:8080**.
+Le simulateur Modbus est déjà configuré : dès la connexion, les graphiques se remplissent sans autre réglage.
+
+### Commandes utiles
+
+| Action | Commande |
+|---|---|
+| Arrêter, en gardant les données | `docker compose down` |
+| Redémarrer | `docker compose up -d` |
+| Voir les journaux | `docker compose logs -f backend` |
+| Reconstruire après un changement de code | `docker compose up -d --build` |
+| **Tout effacer** (base, mesures, comptes) | `docker compose down -v` |
 
 ### Première connexion
 
 Le compte administrateur est créé au premier démarrage, avec `ADMIN_USERNAME` et `ADMIN_PASSWORD` définis dans `.env`. Connectez-vous avec ces valeurs, puis changez le mot de passe dans « Mon compte ».
+
+### Dépannage
+
+| Symptôme | Cause et remède |
+|---|---|
+| `failed to connect to the docker API` | Docker Desktop n'est pas démarré. Le lancer, puis relancer la commande. |
+| `ADMIN_PASSWORD manquant dans .env` | Le fichier `.env` n'existe pas ou la variable est vide. Reprendre l'étape 3 et 4. |
+| Connexion refusée avec le bon mot de passe, journaux backend : `Access denied for user 'api'` | Les mots de passe du `.env` ont changé après la création de la base. MariaDB ne les relit pas quand son volume existe déjà. Remettre les anciens mots de passe, ou repartir de zéro avec `docker compose down -v` puis `docker compose up -d --build` (**efface toutes les données**). |
+| `ADMIN_PASSWORD` modifié mais l'ancien mot de passe est toujours demandé | Le compte admin n'est créé que si aucun compte n'existe. Changer le mot de passe dans « Mon compte », ou repartir de zéro comme ci-dessus. |
+| Port 8080 ou 3000 déjà utilisé | Changer `APP_PORT` ou `API_PORT` dans `.env`, puis `docker compose up -d`. |
+| Page blanche juste après le lancement | Le backend démarre encore. Attendre quelques secondes (`docker compose ps`). |
 
 ### Mise à jour d'une base déjà créée
 
