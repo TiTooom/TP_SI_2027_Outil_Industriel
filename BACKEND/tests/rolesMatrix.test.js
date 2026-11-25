@@ -37,6 +37,7 @@ const ROUTES = [
   ['GET', '/variables/1/latest', 'viewer'], ['GET', '/variables/1/measures', 'viewer'],
   ['GET', '/export.csv?variableIds=1', 'viewer'],
   ['PATCH', '/variables/1', 'technician', { enabled: false }],
+  ['POST', '/variables/1/write', 'technician', { value: 1 }], // exploitation : envoyer une valeur à l'automate
   ['POST', '/plcs', 'engineer', {}], ['PUT', '/plcs/1', 'engineer', {}], ['DELETE', '/plcs/1', 'engineer'],
   ['POST', '/variables', 'engineer', {}], ['PUT', '/variables/1', 'engineer', {}], ['DELETE', '/variables/1', 'engineer'],
   ['GET', '/users', 'admin'], ['POST', '/users', 'admin', {}], ['GET', '/users/1', 'admin'],

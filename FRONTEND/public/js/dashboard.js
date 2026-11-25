@@ -3,8 +3,9 @@
 // périodiquement pour détecter ajouts, suppressions et modifications.
 import { api, serverNow } from './api.js';
 import { errorMessage } from './messages.js';
-import { mountNav } from './nav.js';
+import { mountNav, hasRole } from './nav.js';
 import { initLayout } from './layout.js';
+import { buildWriteForm } from './writeForm.js';
 import { STATES, el } from './dom.js';
 import { formatValue, formatClock } from './format.js';
 import { chartColors, onThemeChange } from './theme.js';
@@ -31,6 +32,7 @@ let active = new Map(); // variable_id -> { variable, plcName } (variables activ
 let catalogReady = false;
 let layout = null;
 let dragId = null;
+let canWrite = false; // technician+ : le serveur applique la vraie règle
 let generation = 0; // invalide les boucles de liste d'une session précédente (visibilitychange)
 
 // --- Graphique ---------------------------------------------------------------
@@ -91,7 +93,7 @@ function pushMeasure(card, m) {
 // --- Cartes ------------------------------------------------------------------
 
 function signatureOf(v, plcName) {
-  return JSON.stringify([v.name, v.unit, v.frequency_s, v.plc_id, v.data_type, v.register_type, v.address, plcName]);
+  return JSON.stringify([v.name, v.unit, v.frequency_s, v.plc_id, v.data_type, v.register_type, v.address, v.writable, plcName]);
 }
 
 // Barre d'édition de la carte (visible seulement en mode édition, cf. CSS .editing).
@@ -193,10 +195,13 @@ function buildCard(variable, plcName) {
   const canvas = node.querySelector('canvas');
   canvas.setAttribute('aria-label', `Évolution de ${variable.name} sur les 10 dernières minutes`);
   const tools = buildTools(variable);
+  // Variable modifiable : champ d'envoi sous le graphique, pour qui a le droit d'écrire (masqué en mode édition, cf. CSS).
+  const write = variable.writable && canWrite ? buildWriteForm(variable, () => tick()) : null;
+  if (write) node.querySelector('.var-foot').before(write.root);
   node.append(tools.root);
   attachDrag(node, variable.id, tools.handle);
   return {
-    variable, signature: signatureOf(variable, plcName), node, tools,
+    variable, signature: signatureOf(variable, plcName), node, tools, write,
     valueEl: node.querySelector('.var-value'), badgeEl: node.querySelector('.state-badge'),
     footEl: node.querySelector('.var-foot'), lastTs: 0, lastMeasure: null, historyLoaded: false,
     color: null, chart: createChart(canvas, variable),
@@ -235,6 +240,7 @@ function renderCard(card) {
   const good = card.lastMeasure?.quality === 'good';
   card.valueEl.textContent = good ? formatValue(card.lastMeasure.value) : '—';
   card.valueEl.classList.toggle('stale', !good || key === 'offline');
+  card.write?.setCurrent(good ? card.lastMeasure.value : null);
   const st = plcStatus.get(card.variable.plc_id);
   if (key === 'offline' && st?.last_error) card.footEl.textContent = `Erreur : ${st.last_error}`;
   else if (card.lastMeasure) card.footEl.textContent = `Dernière mesure à ${new Date(card.lastMeasure.ts).toLocaleTimeString('fr-FR')}`;
@@ -418,5 +424,6 @@ onThemeChange(() => {
 });
 
 const user = await mountNav();
+canWrite = hasRole(user, 'technician');
 layout = initLayout({ user, display });
 start();

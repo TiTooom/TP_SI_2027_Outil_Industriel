@@ -275,6 +275,20 @@ dialog { box-shadow: 0 12px 40px rgba(0,0,0,.6); max-height: 94vh; overflow-y: a
 .card-tools .card-color { width: 3rem; padding: .2rem; cursor: pointer; }
 .editing .card-tools { row-gap: .6rem; }
 
+/* --- Envoi d'une valeur à l'automate (variables modifiables) ----------------- */
+.write-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .75rem; padding-top: .75rem;
+  border-top: 1px solid var(--border); }
+.write-label { flex: none; color: var(--muted); font-size: .9rem; margin-right: .15rem; }
+/* Le champ prend la place restante : label, champ, unité et bouton tiennent sur une ligne même sur une carte étroite. */
+.write-row .write-input { flex: 1 1 4.5rem; width: auto; min-width: 0; max-width: 12rem; }
+.write-unit { flex: none; color: var(--muted); }
+.write-status { flex-basis: 100%; min-height: 1.25em; font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+.write-status.ok { color: var(--ok); }
+.write-status.warn { color: var(--warn); }
+.write-status.ko { color: var(--ko); }
+/* En mode édition on déplace et règle les cartes : pas d'envoi à l'automate par mégarde. */
+.editing .write-row { display: none; }
+
 /* --- Thème clair ------------------------------------------------------------
    Même noms de variables que le thème sombre : seules les valeurs changent. Placé en dernier pour l'emporter. */
 :root[data-bs-theme="light"] {

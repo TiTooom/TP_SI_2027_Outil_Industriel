@@ -16,4 +16,13 @@ function rawValue({ min, max, periodS, address }, tSeconds, noise) {
   return Math.round(Math.min(max, Math.max(min, value)));
 }
 
-module.exports = { SIGNALS, rawValue };
+// Valeurs que l'application peut écrire : registres holding jamais recalculés, et sorties TOR (coils).
+// Elles servent à démontrer l'écriture vers l'automate : la valeur écrite est relue telle quelle.
+const SETPOINTS = [
+  { address: 10, initial: 250 }, // consigne de température (x0.1 °C) : 25,0 °C
+  { address: 11, initial: 200 }, // consigne de pression (x0.01 bar) : 2,00 bar
+];
+const COIL_COUNT = 4; // coil 0 : marche pompe ; tous à 0 (arrêt) au démarrage
+const REGISTER_COUNT = 16; // adresses 0 à 15 ; celles qui ne servent à rien lisent 0, comme un vrai automate
+
+module.exports = { SIGNALS, SETPOINTS, COIL_COUNT, REGISTER_COUNT, rawValue };

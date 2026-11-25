@@ -74,6 +74,8 @@ export const api = {
   latestAll: () => request('/variables/latest'),
   listVariablesWithDeleted: () => request('/variables?include_deleted=1'),
   patchVariable: (id, fields) => request(`/variables/${id}`, { method: 'PATCH', body: fields }),
+  // Délai étendu : l'envoi attend son tour derrière les lectures de l'automate, puis la relecture de confirmation.
+  writeVariable: (id, value) => request(`/variables/${id}/write`, { method: 'POST', body: { value }, timeout: 20000 }),
   login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password }, noRedirect: true }),
   logout: () => request('/auth/logout', { method: 'POST', noRedirect: true }),
   me: () => request('/auth/me'),

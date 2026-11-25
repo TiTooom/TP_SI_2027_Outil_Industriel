@@ -2,13 +2,13 @@
 const { apiPool } = require('../db/pools');
 
 const COLUMNS = `id, plc_id, name, register_type, address, data_type, scale, value_offset,
-  COALESCE(unit, '') AS unit, frequency_s, enabled, created_at, updated_at`;
+  COALESCE(unit, '') AS unit, frequency_s, enabled, writable, created_at, updated_at`;
 
-const toVariable = (row) => ({ ...row, enabled: Boolean(row.enabled) });
+const toVariable = (row) => ({ ...row, enabled: Boolean(row.enabled), writable: Boolean(row.writable) });
 
 // Variables supprimées incluses (historique exportable) : plc_name et deleted_at ISO (null si active).
 const WITH_DELETED = `SELECT v.id, v.plc_id, v.name, v.register_type, v.address, v.data_type, v.scale, v.value_offset,
-  COALESCE(v.unit, '') AS unit, v.frequency_s, v.enabled, v.created_at, v.updated_at, v.deleted_at, p.name AS plc_name
+  COALESCE(v.unit, '') AS unit, v.frequency_s, v.enabled, v.writable, v.created_at, v.updated_at, v.deleted_at, p.name AS plc_name
   FROM config.variables v JOIN config.plcs p ON p.id = v.plc_id`;
 
 const toVariableWithDeleted = (row) => ({
@@ -53,9 +53,9 @@ async function findById(id) {
 async function create(v) {
   const [result] = await apiPool.query(
     `INSERT INTO config.variables
-      (plc_id, name, register_type, address, data_type, scale, value_offset, unit, frequency_s, enabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [v.plc_id, v.name, v.register_type, v.address, v.data_type, v.scale, v.value_offset, v.unit, v.frequency_s, v.enabled],
+      (plc_id, name, register_type, address, data_type, scale, value_offset, unit, frequency_s, enabled, writable)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [v.plc_id, v.name, v.register_type, v.address, v.data_type, v.scale, v.value_offset, v.unit, v.frequency_s, v.enabled, v.writable],
   );
   return findById(result.insertId);
 }
@@ -63,9 +63,9 @@ async function create(v) {
 async function update(id, v) {
   await apiPool.query(
     `UPDATE config.variables SET plc_id = ?, name = ?, register_type = ?, address = ?, data_type = ?,
-      scale = ?, value_offset = ?, unit = ?, frequency_s = ?, enabled = ?
+      scale = ?, value_offset = ?, unit = ?, frequency_s = ?, enabled = ?, writable = ?
       WHERE id = ? AND deleted_at IS NULL`,
-    [v.plc_id, v.name, v.register_type, v.address, v.data_type, v.scale, v.value_offset, v.unit, v.frequency_s, v.enabled, id],
+    [v.plc_id, v.name, v.register_type, v.address, v.data_type, v.scale, v.value_offset, v.unit, v.frequency_s, v.enabled, v.writable, id],
   );
   return findById(id);
 }

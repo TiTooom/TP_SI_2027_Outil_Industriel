@@ -37,6 +37,7 @@ test('variable defaults are applied', () => {
   assert.strictEqual(value.value_offset, 0);
   assert.strictEqual(value.unit, '');
   assert.strictEqual(value.enabled, true);
+  assert.strictEqual(value.writable, false, 'read-only unless declared writable');
 });
 
 test('variable bool/register type coupling', () => {
@@ -51,4 +52,15 @@ test('variable rejects bad numbers', () => {
   assert.ok(validateVariable({ ...base, frequency_s: 86401 }).error);
   assert.ok(validateVariable({ ...base, address: 65536 }).error);
   assert.ok(validateVariable({ ...base, unit: 'x'.repeat(21) }).error);
+});
+
+test('writable is only allowed on holding and coil registers', () => {
+  assert.strictEqual(validateVariable({ ...base, writable: true }).value.writable, true);
+  assert.strictEqual(validateVariable({ ...base, register_type: 'coil', data_type: 'bool', writable: true }).value.writable, true);
+  for (const reg of ['input', 'discrete']) {
+    const data_type = reg === 'discrete' ? 'bool' : 'int16';
+    assert.match(validateVariable({ ...base, register_type: reg, data_type, writable: true }).error, /read-only in Modbus/, reg);
+    assert.ok(!validateVariable({ ...base, register_type: reg, data_type, writable: false }).error, `${reg} stays readable`);
+  }
+  assert.ok(validateVariable({ ...base, writable: 'yes' }).error, 'writable must be a boolean');
 });

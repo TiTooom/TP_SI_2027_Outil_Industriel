@@ -160,13 +160,14 @@ Le compte administrateur est créé au premier démarrage, avec `ADMIN_USERNAME`
 | `ADMIN_PASSWORD` modifié mais l'ancien mot de passe est toujours demandé | Le compte admin n'est créé que si aucun compte n'existe. Changer le mot de passe dans « Mon compte », ou repartir de zéro comme ci-dessus. |
 | Port 8080 ou 3000 déjà utilisé | Changer `APP_PORT` ou `API_PORT` dans `.env`, puis `docker compose up -d`. |
 | Page blanche juste après le lancement | Le backend démarre encore. Attendre quelques secondes (`docker compose ps`). |
+| L'interface ne montre pas les derniers changements, ou une case se décoche après enregistrement | Le navigateur garde d'anciennes copies des fichiers JavaScript, et mélange anciennes et nouvelles versions. Faire **Ctrl+F5** une fois. Ensuite nginx impose la revalidation (`Cache-Control: no-cache`) : un simple rechargement suffit. |
 
 ### Mise à jour d'une base déjà créée
 
-Les scripts de `db/init` ne tournent que sur une base neuve. Si la base existe depuis avant une mise à jour, appliquer les fichiers de `db/migrations/` dans l'ordre des numéros (`002` puis `003`). Exemple pour la table des sessions, la base tournant :
+Les scripts de `db/init` ne tournent que sur une base neuve. Si la base existe depuis avant une mise à jour, appliquer les fichiers de `db/migrations/` dans l'ordre des numéros (`002`, `003` puis `004`). Chacun peut être rejoué sans risque. Exemple avec la dernière, qui ajoute la colonne des variables modifiables (nécessaire à l'écriture vers l'automate), la base tournant :
 
 ```bash
-docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"' < db/migrations/003_sessions.sql
+docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"' < db/migrations/004_variables_writable.sql
 ```
 
 Sous PowerShell, la redirection `<` n'existe pas : utiliser Git Bash. Ne pas lancer `docker compose down -v` pour cela, il efface le volume et toutes les mesures. Détail dans [db/migrations/README.md](db/migrations/README.md).
@@ -176,6 +177,27 @@ Sous PowerShell, la redirection `<` n'existe pas : utiliser Git Bash. Ne pas lan
 1. **Ajouter une variable** : page *Configuration*. Choisir l'automate (le « Simulateur » est déjà présent), puis le registre, l'adresse, le type et la fréquence. Aucun redémarrage n'est nécessaire.
 2. **Voir le graphique** : page *Tableau de bord*. Une carte et un graphique par variable, mis à jour seuls. Si un automate ne répond plus, ses cartes le signalent.
 3. **Exporter en CSV** : page *Export*. Choisir la plage de dates et les variables, puis « Télécharger CSV ». Une plage est limitée à 31 jours.
+4. **Envoyer une valeur à l'automate** : dans *Configuration*, cocher « Modifiable depuis le tableau de bord » sur une variable `holding` ou `coil` (ingénieur ou administrateur). Sa carte du tableau de bord affiche alors un champ « Écrire » et un bouton « Envoyer » (ou « Activer » / « Désactiver » pour un `coil`), pour un technicien ou plus. L'application envoie la valeur, la relit aussitôt et indique si l'automate la confirme. Le champ vide rappelle la valeur actuelle ; en mode édition d'un tableau, l'envoi est masqué.
+
+**Pourquoi pas `input` ?** Un registre `input` (FC4) ou une entrée `discrete` (FC2) est en lecture seule dans le protocole Modbus : seul l'automate peut en changer la valeur, il refuserait toute écriture. Pour envoyer une valeur, il faut un registre `holding` (FC3) ou un `coil` (FC1). Le formulaire désactive la case pour les deux autres types, et la base refuse la combinaison.
+
+### Registres du simulateur
+
+Le simulateur sert à essayer l'application sans automate. Il répond à l'unit ID `1`, sur le port 5020 :
+
+| Type | Adresse | Contenu | Écriture |
+|---|---|---|---|
+| `holding` ou `input` | 0 | température (× 0,1 °C) | non : recalculée chaque seconde |
+| `holding` ou `input` | 1 | pression (× 0,01 bar) | non : recalculée chaque seconde |
+| `holding` ou `input` | 2 | débit (× 0,1 m³/h) | non : recalculé chaque seconde |
+| `holding` ou `input` | 3 | niveau (× 0,1 %) | non : recalculé chaque seconde |
+| `holding` | 10 | consigne de température (× 0,1 °C), 250 au départ | oui |
+| `holding` | 11 | consigne de pression (× 0,01 bar), 200 au départ | oui |
+| `coil` | 0 à 3 | sorties tout ou rien, à 0 au départ (le 0 sert de « marche pompe ») | oui |
+
+Les autres adresses de 0 à 15 lisent 0 et sont en lecture seule ; il n'y a pas d'entrée `discrete`. Une écriture refusée renvoie l'exception Modbus 2 (adresse inconnue), comme le ferait un automate.
+
+Le jeu de démonstration (`db/init/03_seed.sql`) crée « Consigne température » (`holding` 10) et « Marche pompe » (`coil` 0), déjà modifiables. Une base créée avant cet ajout ne les reçoit pas : les ajouter dans *Configuration* avec les valeurs du tableau.
 
 Le sélecteur « Tableau » de la page *Tableau de bord* permet aussi de créer des tableaux personnels ou d'équipe, dont les cartes se déplacent par glisser-déposer (bouton « Modifier »).
 
@@ -215,16 +237,18 @@ Fiche à suivre pour chaque variable :
 - **Type de registre** : `holding` = FC3 (4xxxx), `input` = FC4 (3xxxx), `coil` = FC1 (0xxxx), `discrete` = FC2 (1xxxx). Les types `coil` et `discrete` sont des bits : leur type de donnée est `bool`.
 - **32 bits** : une valeur sur 2 registres se lit seulement en ordre ABCD (mot de poids fort en premier). Un automate qui envoie en CDAB est mal lu : contournement, lire chaque registre dans une variable `uint16`.
 - **Valeur affichée** = brut × `scale` + `value_offset`. Exemple : un registre en dixièmes de °C a `scale = 0,1`.
-- **Connexion** : lecture seule, port 502 (ou celui de l'automate), unit ID souvent `1`.
-- **Avant tout** : tester l'adresse avec **modpoll** depuis le PC qui fait tourner Docker.
+- **Connexion** : port 502 (ou celui de l'automate), unit ID souvent `1`. Le relevé est en lecture seule ; l'application n'écrit que dans les variables cochées « Modifiable ».
+- **Écriture** : `holding` par FC6 (un registre) ou FC16 (32 bits, en une seule requête, mot de poids fort en premier) ; `coil` par FC5. La valeur saisie devient le brut `(valeur − décalage) ÷ échelle`, arrondi, et refusée si elle sort du type de donnée (le message donne la plage permise). L'automate doit autoriser les écritures Modbus sur cette zone : certains les bloquent par défaut ou filtrent les adresses IP.
+- **Sécurité de l'écriture** : seules les variables cochées sont écrites, par un technicien ou plus. Chaque envoi est tracé avec l'utilisateur, la variable et la valeur (`docker compose logs backend`). Un automate qui répond par une exception reste « en ligne » ; un automate muet passe « hors ligne ».
+- **Avant tout** : tester l'adresse avec **modpoll** depuis le PC qui fait tourner Docker, et pour l'écriture, essayer d'abord sur un registre de test.
 
 ## Rôles
 
 | Rôle | Peut faire |
 |---|---|
 | Lecteur (`viewer`) | Voir le tableau de bord et la configuration, exporter en CSV |
-| Technicien (`technician`) | En plus : activer ou désactiver une variable, changer sa fréquence |
-| Ingénieur (`engineer`) | En plus : ajouter, modifier, supprimer automates et variables, modifier les tableaux d'équipe |
+| Technicien (`technician`) | En plus : activer ou désactiver une variable, changer sa fréquence, envoyer une valeur à l'automate (variables modifiables) |
+| Ingénieur (`engineer`) | En plus : ajouter, modifier, supprimer automates et variables (dont le droit « modifiable »), modifier les tableaux d'équipe |
 | Administrateur (`admin`) | En plus : gérer les comptes et les équipes |
 
 Les droits sont vérifiés par le serveur, pas seulement par la page.

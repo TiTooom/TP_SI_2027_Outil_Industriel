@@ -1,7 +1,8 @@
-// Client Modbus TCP en lecture seule (FC1, FC2, FC3, FC4 uniquement).
+// Client Modbus TCP : lecture (FC1, FC2, FC3, FC4) et, pour les variables déclarées modifiables,
+// écriture sur holding (FC6, FC16) et coil (FC5) uniquement.
 // Une connexion par automate, rouverte automatiquement après une erreur.
 const ModbusRTU = require('modbus-serial');
-const { registerCount, decodeValue } = require('./modbusDecoder');
+const { registerCount, decodeValue, encodeValue } = require('./modbusDecoder');
 
 const READERS = {
   coil: 'readCoils',
@@ -9,6 +10,9 @@ const READERS = {
   holding: 'readHoldingRegisters',
   input: 'readInputRegisters',
 };
+
+// Les registres input (FC4) et discrete (FC2) sont en lecture seule dans le protocole : jamais écrits ici.
+const WRITABLE_TYPES = new Set(['holding', 'coil']);
 
 // modbus-serial n'impose pas de délai de connexion : on le borne nous-mêmes.
 function withTimeout(promise, ms, label) {
@@ -53,21 +57,14 @@ function createModbusClient({ timeoutMs, ClientClass = ModbusRTU }) {
     }
   }
 
-  // target : une ligne de relevé (automate + variable : plc_id, host, port, unit_id, register_type, address...).
-  // Rejette en cas d'échec ; une erreur portant modbusCode est une réponse d'exception de l'automate.
-  async function read(target) {
-    const plc = target;
-    const variable = target;
+  // Exécute `action(client)` sur la connexion de l'automate.
+  // Une erreur portant modbusCode est une réponse d'exception de l'automate : la socket reste saine.
+  async function withClient(plc, action) {
     const client = await connect(plc);
     try {
       client.setID(plc.unit_id);
-      const method = READERS[variable.register_type];
-      if (!method) throw new Error(`Unsupported register type: ${variable.register_type}`);
-      const length = registerCount(variable.data_type);
-      const { data } = await withTimeout(client[method](variable.address, length), timeoutMs, 'Read');
-      return decodeValue(variable.data_type, data, variable.scale, variable.value_offset);
+      return await action(client);
     } catch (err) {
-      // Une exception Modbus (adresse illégale...) prouve que l'automate répond et que la socket est saine.
       if (err.modbusCode !== undefined) throw err;
       // La connexion est peut-être corrompue : on repart d'une socket neuve au prochain tick.
       dispose(plc.plc_id);
@@ -75,11 +72,44 @@ function createModbusClient({ timeoutMs, ClientClass = ModbusRTU }) {
     }
   }
 
+  // target : une ligne de relevé (automate + variable : plc_id, host, port, unit_id, register_type, address...).
+  // Rejette en cas d'échec ; une erreur portant modbusCode est une réponse d'exception de l'automate.
+  function read(target) {
+    return withClient(target, async (client) => {
+      const method = READERS[target.register_type];
+      if (!method) throw new Error(`Unsupported register type: ${target.register_type}`);
+      const length = registerCount(target.data_type);
+      const { data } = await withTimeout(client[method](target.address, length), timeoutMs, 'Read');
+      return decodeValue(target.data_type, data, target.scale, target.value_offset);
+    });
+  }
+
+  // Écrit `value` (valeur physique) et renvoie { value } : ce que l'automate contient après arrondi au pas de l'échelle.
+  // La valeur est encodée avant toute connexion : une valeur invalide (code INVALID_VALUE) ne touche pas le réseau.
+  async function write(target, value) {
+    if (!WRITABLE_TYPES.has(target.register_type)) {
+      throw new Error(`Register type ${target.register_type} is read-only`);
+    }
+    const encoded = encodeValue(target.data_type, value, target.scale, target.value_offset);
+    await withClient(target, async (client) => {
+      const { address } = target;
+      if (target.register_type === 'coil') {
+        await withTimeout(client.writeCoil(address, encoded.bit), timeoutMs, 'Write');
+      } else if (encoded.registers.length === 1) {
+        await withTimeout(client.writeRegister(address, encoded.registers[0]), timeoutMs, 'Write');
+      } else {
+        // 32 bits : une seule requête FC16, pour que les deux mots arrivent ensemble.
+        await withTimeout(client.writeRegisters(address, encoded.registers), timeoutMs, 'Write');
+      }
+    });
+    return { value: encoded.value };
+  }
+
   function closeAll() {
     for (const plcId of [...connections.keys()]) dispose(plcId);
   }
 
-  return { read, closeAll };
+  return { read, write, closeAll };
 }
 
 module.exports = { createModbusClient };

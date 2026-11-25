@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS config.variables (
   unit          VARCHAR(20)  NULL,
   frequency_s   INT UNSIGNED NOT NULL DEFAULT 5,
   enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
+  writable      BOOLEAN      NOT NULL DEFAULT FALSE COMMENT 'Valeur modifiable depuis l''interface (écriture vers l''automate)',
   deleted_at    TIMESTAMP    NULL DEFAULT NULL COMMENT 'Suppression logique : conserve l''historique',
   -- 1 si active, NULL si supprimée : NULL est distinct dans un UNIQUE, d'où unicité du nom parmi les actives seulement
   active_key    TINYINT      AS (IF(deleted_at IS NULL, 1, NULL)) PERSISTENT,
@@ -39,6 +40,8 @@ CREATE TABLE IF NOT EXISTS config.variables (
   CONSTRAINT fk_variables_plc FOREIGN KEY (plc_id) REFERENCES config.plcs(id) ON DELETE RESTRICT,
   CONSTRAINT uq_variables_plc_name UNIQUE (plc_id, name, active_key),
   CONSTRAINT ck_variables_frequency CHECK (frequency_s >= 1),
+  -- Modbus : les registres input (FC4) et discrete (FC2) sont en lecture seule, un automate refuserait l'écriture.
+  CONSTRAINT ck_variables_writable CHECK (NOT writable OR register_type IN ('holding', 'coil')),
   INDEX idx_variables_active (deleted_at, enabled)
 ) ENGINE=InnoDB;
 

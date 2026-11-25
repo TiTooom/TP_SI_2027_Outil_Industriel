@@ -37,6 +37,7 @@ function createPoller({
       : { state: 'online', last_error: null, last_success_at: at, last_attempt_at: at });
   }
 
+  // Renvoie la valeur lue (null si la lecture a échoué) : l'écriture s'en sert pour confirmer ce que l'automate contient.
   async function readAndStore(target) {
     const ts = now();
     let value = null;
@@ -54,15 +55,20 @@ function createPoller({
     } catch (err) {
       logger.error(`Measure insert failed for variable ${target.variable_id}: ${err.message}`);
     }
+    return value;
   }
 
-  // Lectures sérialisées par automate ; les automates n'attendent pas les uns les autres.
-  function enqueue(target) {
-    const previous = plcQueues.get(target.plc_id) || Promise.resolve();
-    const next = previous.then(() => readAndStore(target));
-    plcQueues.set(target.plc_id, next);
+  // Opérations sérialisées par automate (lectures et écritures partagent la même socket) ;
+  // les automates n'attendent pas les uns les autres.
+  function enqueueJob(plcId, job) {
+    const previous = plcQueues.get(plcId) || Promise.resolve();
+    const next = previous.then(job);
+    // Une écriture refusée ne doit pas bloquer les opérations suivantes de la file.
+    plcQueues.set(plcId, next.catch(() => {}));
     return next;
   }
+
+  const enqueue = (target) => enqueueJob(target.plc_id, () => readAndStore(target));
 
   function tick(variableId, target) {
     const task = tasks.get(variableId);
@@ -150,12 +156,34 @@ function createPoller({
     modbus.closeAll();
   }
 
+  // Écrit une valeur sur une variable déclarée modifiable, puis la relit tout de suite : la mesure relue est
+  // enregistrée (donc visible sur le graphique) et prouve ce que l'automate contient vraiment.
+  // Rejette avec code NOT_WRITABLE si la variable n'est pas (ou plus) modifiable, INVALID_VALUE si la valeur
+  // sort du type de donnée, modbusCode si l'automate refuse, ou l'erreur réseau d'origine.
+  async function write(variableId, value) {
+    if (stopped) throw Object.assign(new Error('Poller is stopped'), { code: 'STOPPED' });
+    const target = await repository.findWritableTarget(variableId);
+    if (!target) throw Object.assign(new Error('Variable is not writable'), { code: 'NOT_WRITABLE' });
+    return enqueueJob(target.plc_id, async () => {
+      let stored;
+      try {
+        stored = await modbus.write(target, value);
+      } catch (err) {
+        // Valeur refusée avant tout échange : l'état de connexion de l'automate n'a pas bougé.
+        if (err.code !== 'INVALID_VALUE') recordState(target.plc_id, err.modbusCode === undefined ? err : null);
+        throw err;
+      }
+      recordState(target.plc_id, null);
+      return { written: stored.value, readBack: await readAndStore(target) };
+    });
+  }
+
   // Pour /api/plcs/status ; 'unknown' tant qu'aucune lecture n'a été tentée.
   function getPlcState(plcId) {
     return plcState.get(plcId) || UNKNOWN_STATE;
   }
 
-  return { start, stop, reload, syncVariable, syncPlc, getPlcState };
+  return { start, stop, reload, syncVariable, syncPlc, getPlcState, write };
 }
 
 module.exports = { createPoller };

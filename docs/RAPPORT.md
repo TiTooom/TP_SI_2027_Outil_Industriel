@@ -135,6 +135,7 @@ erDiagram
         varchar unit
         int frequency_s ">= 1"
         bool enabled
+        bool writable "modifiable depuis l'interface"
         timestamp deleted_at "suppression logique"
         tinyint active_key "colonne générée : 1 si active, NULL si supprimée"
     }
@@ -182,13 +183,14 @@ Nous avons fait les choix suivants.
 - **Suppression logique des variables.** La colonne `deleted_at` marque une variable comme supprimée, sans l'effacer. La clé étrangère vers `measures` est en `RESTRICT` : l'historique reste donc consultable et exportable.
 - **Nom unique parmi les variables actives.** Une colonne calculée `active_key` vaut 1 tant que la variable n'est pas supprimée. Un nom supprimé peut ainsi être réutilisé.
 - **Une lecture en échec est gardée.** La mesure est enregistrée avec `value = NULL` et `quality = 'bad'`. Les coupures apparaissent ainsi dans l'historique et dans l'export.
-- **Des contraintes `CHECK`.** La fréquence doit être d'au moins 1 seconde, le port doit être positif, et un tableau de bord appartient soit à un utilisateur, soit à une équipe, jamais aux deux.
+- **Des contraintes `CHECK`.** La fréquence doit être d'au moins 1 seconde, le port doit être positif, et un tableau de bord appartient soit à un utilisateur, soit à une équipe, jamais aux deux. Une variable `input` ou `discrete` ne peut pas être « modifiable » : en Modbus ces registres sont en lecture seule.
+- **L'écriture vers l'automate est un droit déclaré, pas un état par défaut.** Seule une variable `holding` ou `coil` cochée « modifiable » (colonne `writable`, réglée par un ingénieur) reçoit des valeurs, envoyées par un technicien ou plus. L'écriture ne touche jamais `prod.measures` : le service de relevé relit la valeur après l'envoi et l'enregistre lui-même, ce qui garde la règle précédente intacte.
 - **Des index.** `measures (variable_id, ts)` sert aux graphiques et à l'export par plage de dates. `sessions (user_id)` et `sessions (expires_at)` servent à la connexion et à la purge. Le nom d'un tableau est unique pour chaque propriétaire.
 - **Sessions en base.** Une session peut être révoquée à tout moment, par exemple au changement de mot de passe. Les sessions expirées sont supprimées chaque heure.
 - **Tableaux de bord en JSON.** La colonne `layout` contient la disposition (version 1, liste de cartes avec leur taille). Un propriétaire garde au plus 20 tableaux, et un tableau contient au plus 50 cartes.
 - **Dates en UTC.** La base travaille en UTC. Le fichier CSV ajoute une colonne d'heure locale (fuseau `Europe/Paris`).
 
-**Migrations.** `db/init` ne s'exécute que sur un volume vide. Une base créée avant J5 et J6 reçoit donc à la main `db/migrations/002` (index des tableaux) et `003` (table des sessions), décrits dans le README.
+**Migrations.** `db/init` ne s'exécute que sur un volume vide. Une base créée avant J5 et J6 reçoit donc à la main `db/migrations/002` (index des tableaux), `003` (table des sessions) et `004` (colonne `writable`), décrits dans le README.
 
 ## 5. Fonctionnalités réalisées
 
@@ -202,6 +204,7 @@ Nous avons fait les choix suivants.
 | J4 | Export CSV par plage de dates, compatible Excel en français (séparateur `;`, virgule décimale) | 450 000 lignes exportées (39 Mo), 4 exports simultanés (le quatrième reçoit une réponse 429), abandons de téléchargement sans fuite |
 | J5 | Connexion, quatre rôles, page Administration, équipes, « Mon compte », anti brute-force | Matrice rôles × routes (348 vérifications sur les ports 8080 et 3000), parcours complet dans Chrome |
 | J6 | Tableaux personnels ou d'équipe ; cartes déplacées au glisser-déposer ou avec les boutons ▲ ▼ ; trois tailles | Chrome sans fenêtre : 22 contrôles sur 23 (le 23e signalait les 401 attendus de la page de connexion) |
+| Ajout | Écriture vers l'automate : variables « modifiables » (`holding`, `coil`), envoi par un technicien, relecture de confirmation, journal des envois ; simulateur qui accepte les écritures sur ses consignes | 152 tests unitaires du backend, 4 du simulateur dont un client Modbus réel (FC5, FC6, FC16), 30 contrôles de bout en bout dans Docker, parcours dans Chrome sans fenêtre (envoi, refus de l'automate, rôles) |
 
 Les 237 vérifications de bout en bout dans Docker viennent du journal de QA du projet. Le code des tests est dans `BACKEND/tests`.
 
@@ -213,7 +216,7 @@ Voici le tableau de bord temps réel : une carte et un graphique par variable.
 
 - **Un vrai automate.** Nous avons testé l'application uniquement avec le simulateur, qui parle le même protocole Modbus TCP.
 - **L'accès depuis un autre poste.** Nous avons vérifié l'accès par l'adresse IP de la machine hôte, pas depuis un autre PC. Le pare-feu Windows reste à régler.
-- **Les écritures vers l'automate, les alertes (seuils, courriels) et le HTTPS.** Les écritures sont exclues volontairement. Les alertes ne faisaient pas partie du socle. Le HTTPS est en limite ci-dessous.
+- **Les alertes (seuils, courriels) et le HTTPS.** Les alertes ne faisaient pas partie du socle. Le HTTPS est en limite ci-dessous. L'écriture vers l'automate, d'abord exclue, a été ajoutée ensuite (voir le tableau ci-dessus).
 
 ### 5.3 Limites connues
 
@@ -222,7 +225,8 @@ Voici le tableau de bord temps réel : une carte et un graphique par variable.
 - **Port 3000 publié.** L'API est joignable directement, sans passer par nginx. Toutes les routes exigent une session, mais le port reste exposé. En accès direct, l'en-tête `X-Forwarded-For` peut être falsifié : le compteur par adresse IP devient alors peu fiable, seul le compteur par nom reste efficace.
 - **Ordre des mots 32 bits.** Seul l'ordre ABCD est lu correctement. Un automate qui envoie les mots en CDAB donne des valeurs fausses. Le contournement consiste à lire chaque registre dans une variable `uint16`.
 - **Mesures espacées pendant une panne.** Quand un automate ne répond plus, chaque lecture attend le délai de 3 secondes (`MODBUS_TIMEOUT_MS`). L'état « hors ligne » reste visible.
-- **Tests non faits.** Pas de test sur un vrai automate, depuis un autre poste du réseau, sur Firefox ou sur tablette. Le glisser-déposer a été vérifié avec des événements simulés, pas avec une vraie souris. L'ouverture du CSV dans Excel français n'a pas été vérifiée.
+- **Écriture sans bornes métier.** Une valeur n'est refusée que si elle sort du type de donnée (par exemple 40 000 pour un `int16` d'échelle 0,1). Il n'y a pas de minimum ni de maximum propre à chaque variable, ni de confirmation avant l'envoi. Le journal des envois est écrit dans les logs du backend, pas en base.
+- **Tests non faits.** Pas de test sur un vrai automate (l'écriture non plus), depuis un autre poste du réseau, sur Firefox ou sur tablette. Le glisser-déposer a été vérifié avec des événements simulés, pas avec une vraie souris. L'ouverture du CSV dans Excel français n'a pas été vérifiée.
 
 ## 6. Conclusion et retour d'expérience
 

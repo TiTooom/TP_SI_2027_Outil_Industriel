@@ -48,7 +48,7 @@
           <thead><tr>
             <th scope="col">Nom</th><th scope="col">Automate</th><th scope="col">Registre</th>
             <th scope="col">Type</th><th scope="col">Échelle / décalage</th><th scope="col">Unité</th>
-            <th scope="col">Fréquence</th><th scope="col">Activée</th>
+            <th scope="col">Fréquence</th><th scope="col">Activée</th><th scope="col">Modifiable</th>
             <th scope="col" class="text-end">Actions</th>
           </tr></thead>
           <tbody id="var-rows"></tbody>
@@ -168,6 +168,12 @@
         </div>
       </div>
       <p class="text-secondary small">Valeur affichée = valeur brute × échelle + décalage. Les types 32 bits et float32 utilisent 2 registres consécutifs.</p>
+      <div class="form-check form-switch mb-1">
+        <input class="form-check-input" id="var-writable" name="writable" type="checkbox" aria-describedby="var-writable-hint">
+        <label class="form-check-label" for="var-writable">Modifiable depuis le tableau de bord</label>
+        <div class="invalid-feedback"></div>
+      </div>
+      <p class="text-secondary small mb-3" id="var-writable-hint"></p>
       <div class="form-check form-switch mb-3">
         <input class="form-check-input" id="var-enabled" name="enabled" type="checkbox" checked>
         <label class="form-check-label" for="var-enabled">Activée</label>

@@ -57,6 +57,10 @@ export function validateVariable(f) {
   const bitRegister = f.register_type === 'coil' || f.register_type === 'discrete';
   if (bitRegister && f.data_type !== 'bool') errors.data_type = 'coil et discrete imposent le type bool.';
   if (!bitRegister && f.data_type === 'bool') errors.data_type = 'holding et input n’acceptent pas bool.';
+  // Modbus : input (FC4) et discrete (FC2) sont en lecture seule, un automate refuserait l'écriture.
+  if (f.writable && (f.register_type === 'input' || f.register_type === 'discrete')) {
+    errors.writable = 'Seuls holding et coil peuvent être modifiés.';
+  }
   const address = intIn(f.address, 0, 65535, 'Adresse', errors, 'address');
   const scale = finiteNumber(f.scale, 'Échelle', errors, 'scale');
   if (scale === 0) errors.scale = 'L’échelle ne peut pas être 0.';
@@ -69,7 +73,7 @@ export function validateVariable(f) {
     errors,
     value: {
       plc_id: plcId, name: nameValue, register_type: f.register_type, address, data_type: f.data_type,
-      scale, value_offset: offset, unit, frequency_s: freq, enabled: Boolean(f.enabled),
+      scale, value_offset: offset, unit, frequency_s: freq, enabled: Boolean(f.enabled), writable: Boolean(f.writable),
     },
   };
 }

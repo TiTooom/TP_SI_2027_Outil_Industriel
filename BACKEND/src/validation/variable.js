@@ -2,6 +2,7 @@ const { str, int, num, bool, oneOf, collect, isPlainObject } = require('./common
 
 const REGISTER_TYPES = ['holding', 'input', 'coil', 'discrete'];
 const DATA_TYPES = ['int16', 'uint16', 'int32', 'uint32', 'float32', 'bool'];
+const WRITABLE_ERROR = 'writable is only allowed for holding and coil registers (input and discrete are read-only in Modbus)';
 
 function validateVariable(body) {
   const result = collect(body, {
@@ -15,12 +16,15 @@ function validateVariable(body) {
     unit: (b) => str(b, 'unit', { max: 20, fallback: '' }),
     frequency_s: (b) => int(b, 'frequency_s', { min: 1, max: 86400, required: true }),
     enabled: (b) => bool(b, 'enabled', true),
+    writable: (b) => bool(b, 'writable', false),
   });
   if (result.error) return result;
   const { register_type: reg, data_type: type } = result.value;
   const bitRegister = reg === 'coil' || reg === 'discrete';
   if (bitRegister && type !== 'bool') return { error: `data_type must be bool for ${reg} registers` };
   if (!bitRegister && type === 'bool') return { error: `data_type bool is not allowed for ${reg} registers` };
+  // Modbus : input (FC4) et discrete (FC2) sont en lecture seule, un automate refuserait l'écriture.
+  if (result.value.writable && (reg === 'input' || reg === 'discrete')) return { error: WRITABLE_ERROR };
   return result;
 }
 

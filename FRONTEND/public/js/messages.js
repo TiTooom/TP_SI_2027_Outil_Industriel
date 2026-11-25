@@ -14,6 +14,9 @@ const KNOWN = {
   'PLC still has variables, delete them first': "Cet automate a encore des variables : supprimez-les d'abord.",
   'PLC not found': 'Automate introuvable.',
   'Variable not found': 'Variable introuvable.',
+  'Variable is not writable': "Cette variable n'est pas modifiable depuis l'interface.",
+  'Variable is disabled': 'Cette variable est désactivée : activez-la pour lui envoyer une valeur.',
+  'PLC is disabled': 'Cet automate est désactivé.',
   'User not found': 'Utilisateur introuvable.',
   'Team or user not found': 'Équipe ou utilisateur introuvable.',
   'No measure yet': 'Aucune mesure pour le moment.',
@@ -34,8 +37,24 @@ const KNOWN = {
   'host must be an IPv4 address or a valid DNS name': 'Adresse invalide : saisissez une IPv4 ou un nom DNS valide.',
 };
 
+// Écriture vers l'automate : catégories d'échec réseau et exceptions Modbus renvoyées par le serveur.
+const WRITE_FAILURES = {
+  timeout: "L'automate n'a pas répondu à temps : l'envoi n'est pas confirmé.",
+  refused: "Connexion refusée par l'automate : l'envoi n'a pas eu lieu.",
+  unreachable: "Automate injoignable : l'envoi n'a pas eu lieu.",
+  protocol: "Erreur de communication avec l'automate : l'envoi n'est pas confirmé.",
+};
+const MODBUS_EXCEPTIONS = { 1: 'fonction non prise en charge', 2: 'adresse inconnue', 3: 'valeur refusée', 4: "défaut interne de l'automate", 6: 'automate occupé' };
+const frNumber = (text) => Number(text).toLocaleString('fr-FR', { maximumFractionDigits: 6 });
+
 // Messages paramétrés : [motif, fabrique du message français].
 const PATTERNS = [
+  [/^PLC write failed: (timeout|refused|unreachable|protocol)$/, (m) => WRITE_FAILURES[m[1]]],
+  [/^PLC refused the write \(Modbus exception (\d+)\)$/, (m) => `L'automate a refusé l'écriture (${MODBUS_EXCEPTIONS[m[1]] ?? `exception Modbus ${m[1]}`}).`],
+  [/^Value out of range: must be between (\S+) and (\S+)$/, (m) => `Valeur hors plage : entre ${frNumber(m[1])} et ${frNumber(m[2])} attendu.`],
+  [/^A finite number is required$/, () => 'Saisissez un nombre.'],
+  [/^A boolean value /, () => 'Valeur invalide.'],
+  [/^writable is only allowed/, () => 'Seuls les registres holding et coil peuvent être modifiés : input et discrete sont en lecture seule dans Modbus.'],
   [/^Time range must not exceed (\d+) days$/, (m) => `La période ne doit pas dépasser ${m[1]} jours.`],
   [/^Too many rows \((\d+) > (\d+)\)/, () => "Trop de lignes à exporter : réduisez la période ou le nombre de variables."],
   [/^Variable limit reached \((\d+)\)$/, (m) => `Limite atteinte : ${m[1]} variables maximum.`],

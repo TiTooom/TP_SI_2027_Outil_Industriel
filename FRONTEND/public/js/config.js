@@ -123,6 +123,7 @@ function renderVariables() {
     el('td', { text: v.unit || '—' }),
     el('td', canOperate && !canEdit ? {} : { text: `${v.frequency_s} s` }, canOperate && !canEdit ? [frequencyEditor(v)] : []),
     el('td', {}, [canOperate && !canEdit ? enabledSwitch(v) : yesNo(v.enabled)]),
+    el('td', {}, [yesNo(v.writable)]),
     actionButtons(() => openVarForm(v), () => confirmDeleteVar(v), v.name),
   ]));
   $('var-rows').replaceChildren(...rows);
@@ -261,7 +262,19 @@ function syncDataTypes() {
   if (select.selectedOptions[0]?.disabled) select.value = bitRegister ? 'bool' : 'int16';
 }
 
-$('var-register').addEventListener('change', syncDataTypes);
+// Modbus : un registre input (FC4) ou discrete (FC2) est en lecture seule, l'écriture n'est possible que sur holding et coil.
+function syncWritable() {
+  const form = $('var-form');
+  const readOnlyRegister = ['input', 'discrete'].includes(form.elements.register_type.value);
+  const box = form.elements.writable;
+  if (readOnlyRegister) box.checked = false;
+  box.disabled = readOnlyRegister;
+  $('var-writable-hint').textContent = readOnlyRegister
+    ? "Les registres input (FC4) et discrete (FC2) sont en lecture seule dans Modbus : choisissez holding (FC3) ou coil (FC1) pour pouvoir envoyer une valeur à l'automate."
+    : "Si coché, un technicien peut envoyer une valeur à l'automate depuis la carte du tableau de bord. La variable reste relevée : la valeur relue confirme l'écriture.";
+}
+
+$('var-register').addEventListener('change', () => { syncDataTypes(); syncWritable(); });
 
 function openVarForm(variable = null) {
   editingVar = variable;
@@ -274,8 +287,10 @@ function openVarForm(variable = null) {
       form.elements[key].value = variable[key];
     }
     form.elements.enabled.checked = variable.enabled;
+    form.elements.writable.checked = Boolean(variable.writable);
   }
   syncDataTypes();
+  syncWritable();
   showFieldErrors(form, {});
   setFormError('var-error', null);
   $('var-dialog').showModal();

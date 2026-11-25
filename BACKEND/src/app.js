@@ -5,6 +5,7 @@ const healthRouter = require('./routes/health');
 const { createPlcsRouter } = require('./routes/plcs');
 const { createExportRouter } = require('./routes/export');
 const { createVariablesRouter } = require('./routes/variables');
+const { createVariableWriteRouter } = require('./routes/variableWrite');
 const { createAuthRouter } = require('./routes/auth');
 const { createUsersRouter } = require('./routes/users');
 const { createTeamsRouter } = require('./routes/teams');
@@ -62,6 +63,9 @@ function createApp(deps = defaultDeps()) {
   const admin = [authenticate, requireRole('admin')];
   app.use('/api/auth', createAuthRouter(deps));
   app.use('/api/plcs', authenticate, requireRoleByMethod({ GET: 'viewer' }, 'engineer'), createPlcsRouter(deps));
+  // Envoyer une valeur à l'automate est un acte d'exploitation (technician), pas de configuration (engineer) :
+  // route déclarée avant le routeur des variables, dont le POST exige engineer.
+  app.use('/api/variables/:id/write', authenticate, requireRole('technician'), createVariableWriteRouter(deps));
   app.use('/api/variables', authenticate,
     requireRoleByMethod({ GET: 'viewer', PATCH: 'technician' }, 'engineer'), createVariablesRouter(deps));
   app.use('/api/export.csv', authenticate, requireRoleByMethod({ GET: 'viewer' }, 'engineer'), createExportRouter(deps));

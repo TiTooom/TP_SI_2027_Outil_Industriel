@@ -1,5 +1,5 @@
 // E2E manuel (non lancé par npm test) : node BACKEND/tests/e2e/e2e.js
-// Prérequis : `docker compose up -d --build` depuis la racine du dépôt.
+// Prérequis : `docker compose up -d --build` depuis la racine du dépôt, base migrée (db/migrations jusqu'à 004).
 const { execSync, execFileSync } = require('node:child_process');
 const path = require('node:path');
 
@@ -218,6 +218,96 @@ async function j6() {
     check(`J6 DELETE utilisateur ${role} cascade sur ses ${n} tableaux`, (await call('DELETE', `${API}/users/${uid}`)).status === 204 && dbCount(`owner_user_id = ${uid}`) === 0);
   }
   check('J6 aucun reliquat e2e-j6 (utilisateurs, équipes)', sql("SELECT COUNT(*) FROM app.users WHERE username LIKE 'e2e-j6-%'") === '0' && sql("SELECT COUNT(*) FROM app.teams WHERE name LIKE 'e2e-j6-%'") === '0');
+}
+
+// J8 : écriture vers l'automate (variables modifiables, droits, refus de l'automate, relecture enregistrée)
+async function j8() {
+  const adminCookie = cookie;
+  const stamp = Date.now();
+  const pw = 'j8-password-12345';
+  const accounts = {};
+  for (const role of ['viewer', 'technician']) {
+    const username = `e2e-j8-${role}-${stamp}`;
+    accounts[role] = { id: (await call('POST', `${API}/users`, { username, password: pw, role })).json.id };
+    const lg = await fetch(`${API}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: pw }) });
+    accounts[role].cookie = (lg.headers.getSetCookie()[0] || '').split(';')[0];
+  }
+  const as = async (who, method, url, body) => {
+    cookie = who === 'admin' ? adminCookie : accounts[who].cookie;
+    try { return await call(method, url, body); } finally { cookie = adminCookie; }
+  };
+  // Le simulateur expose : holding 0-3 = mesures (écriture refusée), holding 10-11 = consignes, coils 0-3.
+  const base = { plc_id: 1, register_type: 'holding', address: 10, data_type: 'int16', scale: 0.1, unit: '°C', frequency_s: 60, writable: true };
+  const mk = async (name, over) => (await call('POST', `${API}/variables`, { ...base, name: `e2e-j8-${name}`, ...over })).json;
+  const lastValue = (id) => Number(sql(`SELECT value FROM prod.measures WHERE variable_id=${id} ORDER BY ts DESC, id DESC LIMIT 1`));
+
+  const input = await call('POST', `${API}/variables`, { ...base, name: 'e2e-j8-input', register_type: 'input' });
+  check('J8 writable + input -> 400', input.status === 400 && /read-only in Modbus/.test(input.json.error), JSON.stringify(input));
+  const sqlRefused = (() => {
+    try { sql("INSERT INTO config.variables (plc_id, name, register_type, address, writable) VALUES (1, 'e2e-j8-sql', 'input', 0, 1)"); return false; } catch { return true; }
+  })();
+  check('J8 contrainte SQL : writable + input refusé en base', sqlRefused);
+
+  const sp = await mk('consigne');
+  const pump = await mk('marche', { register_type: 'coil', address: 0, data_type: 'bool', scale: 1, unit: '' });
+  const ro = await mk('mesure', { address: 0, writable: false });
+  const onMeasure = await mk('sur-mesure', { address: 1 });
+  check('J8 variables créées, writable renvoyé', sp.writable === true && ro.writable === false && pump.writable === true, JSON.stringify([sp, ro]));
+
+  const W = (id) => `${API}/variables/${id}/write`;
+  let r = await call('POST', W(sp.id), { value: 31.74 });
+  check('J8 écriture holding : arrondie au pas, relue', r.status === 200 && r.json.written === 31.7 && r.json.read_back === 31.7, JSON.stringify(r));
+  // La base garde le DOUBLE brut du décodage (317 x 0.1 = 31.700000000000003) : l'API arrondit, pas le SQL.
+  check('J8 la relecture est enregistrée comme mesure', Math.abs(lastValue(sp.id) - 31.7) < 1e-9, String(lastValue(sp.id)));
+  r = await call('POST', `${NGINX}/variables/${sp.id}/write`, { value: -5.5 });
+  check('J8 écriture via nginx, valeur négative', r.status === 200 && r.json.read_back === -5.5, JSON.stringify(r));
+  r = await call('POST', W(pump.id), { value: true });
+  check('J8 écriture coil à 1', r.status === 200 && r.json.written === 1 && r.json.read_back === 1, JSON.stringify(r));
+  r = await call('POST', W(pump.id), { value: false });
+  check('J8 écriture coil à 0', r.status === 200 && r.json.read_back === 0, JSON.stringify(r));
+
+  r = await call('POST', W(ro.id), { value: 1 });
+  check('J8 variable non modifiable -> 409', r.status === 409 && r.json.error === 'Variable is not writable', JSON.stringify(r));
+  r = await call('POST', W(sp.id), { value: 40000 });
+  check('J8 hors plage -> 400 avec les bornes', r.status === 400 && /between -3276\.8 and 3276\.7/.test(r.json.error), JSON.stringify(r));
+  for (const body of [{}, { value: '12' }, { value: null }, { value: 1, x: 2 }]) {
+    check(`J8 corps invalide ${JSON.stringify(body)} -> 400`, (await call('POST', W(sp.id), body)).status === 400);
+  }
+  check('J8 coil avec 2 -> 400', (await call('POST', W(pump.id), { value: 2 })).status === 400);
+  check('J8 variable inconnue -> 404', (await call('POST', W(99999999), { value: 1 })).status === 404);
+  check('J8 id invalide -> 400', (await call('POST', `${API}/variables/abc/write`, { value: 1 })).status === 400);
+
+  r = await call('POST', W(onMeasure.id), { value: 1 });
+  check("J8 l'automate refuse d'écrire une mesure -> 502 exception Modbus 2", r.status === 502 && /Modbus exception 2/.test(r.json.error), JSON.stringify(r));
+  const status = (await call('GET', `${API}/plcs/status`)).json.find((x) => x.plc_id === 1);
+  check("J8 un refus Modbus ne met pas l'automate hors ligne", status && status.state === 'online', JSON.stringify(status));
+
+  check('J8 viewer ne peut pas écrire -> 403', (await as('viewer', 'POST', W(sp.id), { value: 20 })).status === 403);
+  r = await as('technician', 'POST', W(sp.id), { value: 20 });
+  check('J8 technician peut écrire', r.status === 200 && r.json.read_back === 20, JSON.stringify(r));
+  check('J8 technician ne peut toujours pas créer de variable -> 403',
+    (await as('technician', 'POST', `${API}/variables`, { ...base, name: 'e2e-j8-x' })).status === 403);
+  cookie = '';
+  check('J8 sans session -> 401', (await call('POST', W(sp.id), { value: 20 })).status === 401);
+  cookie = adminCookie;
+  check("J8 GET sur la route d'écriture -> 404", (await call('GET', W(sp.id))).status === 404);
+
+  // Désactivée : plus d'écriture, puis réactivée
+  await call('PATCH', `${API}/variables/${sp.id}`, { enabled: false });
+  r = await call('POST', W(sp.id), { value: 21 });
+  check('J8 variable désactivée -> 409', r.status === 409 && r.json.error === 'Variable is disabled', JSON.stringify(r));
+  await call('PATCH', `${API}/variables/${sp.id}`, { enabled: true });
+  check('J8 réactivée : écriture possible', (await call('POST', W(sp.id), { value: 21 })).status === 200);
+
+  // Retirer le droit d'écriture ferme la route
+  r = await call('PUT', `${API}/variables/${sp.id}`, { ...base, name: 'e2e-j8-consigne', writable: false });
+  check('J8 PUT writable=false', r.status === 200 && r.json.writable === false, JSON.stringify(r));
+  check("J8 plus d'écriture après retrait du droit -> 409", (await call('POST', W(sp.id), { value: 22 })).status === 409);
+
+  // Remise à l'état initial de la consigne du simulateur
+  await call('PUT', `${API}/variables/${sp.id}`, { ...base, name: 'e2e-j8-consigne', writable: true });
+  await call('POST', W(sp.id), { value: 25 });
+  for (const role of ['viewer', 'technician']) await call('DELETE', `${API}/users/${accounts[role].id}`);
 }
 
 async function main() {
@@ -507,6 +597,7 @@ async function main() {
   check('session révoquée après logout -> 401', (await call('GET', `${API}/plcs`)).status === 401);
   await login();
   await j6();
+  await j8();
 
   // Nettoyage des données de test (le compte root seul peut supprimer des mesures)
   const mine = "SELECT id FROM config.variables WHERE name LIKE '%e2e-%' OR plc_id IN (SELECT id FROM config.plcs WHERE name LIKE '%e2e-%')";
