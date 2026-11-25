@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { el } from './dom.js';
 import { errorMessage } from './messages.js';
+import { getTheme, setTheme } from './theme.js';
 
 const HEALTH_REFRESH_MS = 10000;
 const MIN_PASSWORD = 10;
@@ -89,11 +90,20 @@ function buildNav(user) {
     location.replace('login.html');
   });
 
+  const themeBtn = el('button', { className: 'btn btn-outline-light btn-sm theme-toggle', attrs: { type: 'button', 'data-testid': 'theme-toggle' } });
+  const showTheme = () => {
+    const dark = getTheme() === 'dark';
+    themeBtn.textContent = dark ? '☀ Mode clair' : '☾ Mode sombre';
+    themeBtn.setAttribute('aria-label', dark ? 'Passer en mode clair' : 'Passer en mode sombre');
+  };
+  themeBtn.addEventListener('click', () => { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); showTheme(); });
+  showTheme();
+
   const who = el('span', { className: 'user-pill', text: `${user.username} (${ROLE_LABELS[user.role] ?? user.role})` });
   const nav = el('nav', { className: 'navbar app-nav px-3', attrs: { 'aria-label': 'Navigation principale' } }, [
     el('span', { className: 'navbar-brand fw-semibold', text: 'Supervision Process' }),
     el('ul', { className: 'navbar-nav flex-row gap-3 me-auto' }, links),
-    health, who, account, logout,
+    health, who, themeBtn, account, logout,
   ]);
   document.body.append(dialog);
   return { nav, dot, text, health };

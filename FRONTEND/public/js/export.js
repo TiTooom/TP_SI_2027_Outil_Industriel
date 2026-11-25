@@ -4,6 +4,7 @@ import { api, ApiError, exportUrl } from './api.js';
 import { errorMessage } from './messages.js';
 import { mountNav } from './nav.js';
 import { el } from './dom.js';
+import { chartColors, onThemeChange } from './theme.js';
 
 const DAY_MS = 24 * 3600 * 1000;
 const MAX_EXPORT_DAYS = 31;
@@ -200,13 +201,8 @@ function buildDataset(variable, measures, color) {
   };
 }
 
-function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
 function drawChart(datasets, xMin, xMax) {
-  const grid = 'rgba(255,255,255,.08)';
-  const muted = cssVar('--muted');
+  const { grid, muted, text } = chartColors();
   if (chart) chart.destroy();
   chart = new Chart($('preview-chart'), {
     type: 'line',
@@ -215,7 +211,7 @@ function drawChart(datasets, xMin, xMax) {
       animation: false, responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'nearest', axis: 'x', intersect: false },
       plugins: {
-        legend: { labels: { color: cssVar('--text') } },
+        legend: { labels: { color: text } },
         tooltip: { callbacks: { title: (items) => dateTimeFmt.format(items[0].parsed.x) } },
       },
       scales: {
@@ -226,6 +222,17 @@ function drawChart(datasets, xMin, xMax) {
     },
   });
 }
+
+// Changement de thème : l'aperçu déjà tracé relit ses couleurs sans recharger les données.
+onThemeChange(() => {
+  if (!chart) return;
+  const { grid, muted, text } = chartColors();
+  const { x, y } = chart.options.scales;
+  x.grid.color = y.grid.color = grid;
+  x.ticks.color = y.ticks.color = muted;
+  chart.options.plugins.legend.labels.color = text;
+  chart.update('none');
+});
 
 async function onPreview() {
   const params = validate();

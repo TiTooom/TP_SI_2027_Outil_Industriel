@@ -94,7 +94,11 @@ test('layout validation rejects oversized, duplicated, invalid and unknown conte
   }
   assert.match(layoutError({ version: 1, widgets: [{ variableId: 1, size: 'xl' }] }), /size/);
   assert.match(layoutError({ version: 1, widgets: [{ variableId: 1 }] }), /size/);
-  assert.match(layoutError({ version: 1, widgets: [{ variableId: 1, size: 'sm', color: 'red' }] }), /unknown keys/);
+  assert.match(layoutError({ version: 1, widgets: [{ variableId: 1, size: 'sm', x: 1 }] }), /unknown keys/);
+  assert.strictEqual(layoutError({ version: 1, widgets: [{ variableId: 1, size: 'sm', w: 12, h: 80, color: '#4AA3ff' }] }), null);
+  for (const bad of [{ color: 'red' }, { color: '#fff' }, { color: 5 }, { w: 0 }, { w: 13 }, { w: 2.5 }, { h: 79 }, { h: 601 }, { h: '200' }]) {
+    assert.match(layoutError({ version: 1, widgets: [{ variableId: 1, size: 'sm', ...bad }] }), /\.(w|h|color) must/, JSON.stringify(bad));
+  }
   assert.match(layoutError({ version: 1, widgets: [], extra: true }), /unknown keys/);
   assert.match(layoutError({ version: 2, widgets: [] }), /version/);
   assert.match(layoutError({ version: 1 }), /widgets/);

@@ -4,10 +4,10 @@ import { api } from './api.js';
 import { el } from './dom.js';
 import { errorMessage } from './messages.js';
 import { hasRole } from './nav.js';
+import { SIZE_WIDTH, SIZES, normalizeWidget, sizeForWidth } from './widget.js';
 
 const MAX_WIDGETS = 50;
 const MAX_NAME = 100;
-const SIZES = ['sm', 'md', 'lg'];
 const ALL = 'all'; // vue par défaut « Toutes les variables » : jamais enregistrée, lecture seule
 
 const $ = (id) => document.getElementById(id);
@@ -153,12 +153,11 @@ export function initLayout({ user, display }) {
 
   // --- Brouillon et affichage -----------------------------------------------
 
-  const layoutJson = (widgets) => JSON.stringify(widgets.map((w) => [w.variableId, w.size]));
+  const layoutJson = (widgets) => JSON.stringify(widgets.map((w) => [w.variableId, w.size, w.w, w.h, w.color]));
   const isDirty = () => editing && layoutJson(draft) !== saved;
 
   function savedWidgets() {
-    const widgets = current?.layout?.widgets ?? [];
-    return widgets.map((w) => ({ variableId: w.variableId, size: SIZES.includes(w.size) ? w.size : 'md' }));
+    return (current?.layout?.widgets ?? []).map(normalizeWidget);
   }
 
   // Une seule fonction rafraîchit tout : cartes, barre d'édition, boutons.
@@ -211,9 +210,20 @@ export function initLayout({ user, display }) {
       draft.splice(to, 0, draft.splice(from, 1)[0]);
       refresh();
     },
+    // Préréglage Petit / Moyen / Grand : fixe la largeur, laisse la hauteur choisie.
     resize(id, size) {
       const w = draft[indexOf(id)];
-      if (w && SIZES.includes(size)) { w.size = size; refresh(); }
+      if (w && SIZES.includes(size)) { w.size = size; w.w = SIZE_WIDTH[size]; refresh(); }
+    },
+    // Réglage fin : { w } largeur, { h } hauteur du graphique, { color } couleur (null = couleur par défaut).
+    style(id, patch) {
+      const i = indexOf(id);
+      if (i < 0) return;
+      const next = { ...draft[i], ...patch };
+      if (patch.color === null) delete next.color;
+      draft[i] = normalizeWidget(next);
+      if (patch.w !== undefined) draft[i].size = sizeForWidth(draft[i].w ?? SIZE_WIDTH[draft[i].size]);
+      refresh();
     },
     remove(id) {
       draft = draft.filter((w) => w.variableId !== id);
@@ -243,7 +253,7 @@ export function initLayout({ user, display }) {
     busy = true;
     renderEditBar();
     try {
-      current = await api.updateDashboard(current.id, { layout: { version: 1, widgets: draft.map((w) => ({ variableId: w.variableId, size: w.size })) } });
+      current = await api.updateDashboard(current.id, { layout: { version: 1, widgets: draft.map(normalizeWidget) } });
       patchList(current);
       editing = false;
       draft = [];

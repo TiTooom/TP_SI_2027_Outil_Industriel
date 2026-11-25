@@ -10,6 +10,8 @@
   --ko: #f85149;
   --unknown: #6e7681;
   --accent: #4aa3ff;
+  --grid: rgba(255, 255, 255, .08);   /* grille des graphiques */
+  --border-strong: #3a4351;           /* bordure des champs de formulaire */
 }
 
 body {
@@ -80,7 +82,7 @@ body {
 .var-value { font-size: 2.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 .var-value.stale { color: var(--muted); }
 .var-unit { font-size: 1.2rem; color: var(--muted); }
-.chart-wrap { position: relative; height: 140px; }
+.chart-wrap { position: relative; height: var(--chart-h, 140px); }
 .var-foot { color: var(--muted); font-size: .78rem; margin-top: .5rem; }
 
 .empty-state { background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; padding: 2rem 1rem;
@@ -141,18 +143,18 @@ body.auth-pending > :not(#app-nav) { display: none !important; }
 .edit-dirty { color: var(--warn); font-size: .85rem; font-weight: 600; }
 .dashboard-select:focus-visible, .add-select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-/* Grille 3 colonnes : sm = 1, md = 2, lg = 3 ; repli 2 colonnes sous 1200 px, 1 colonne sous 768 px */
-.cards-grid.layout-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.layout-grid .size-sm { grid-column: span 1; }
-.layout-grid .size-md { grid-column: span 2; }
-.layout-grid .size-lg { grid-column: span 3; }
+/* Grille de 12 colonnes : chaque carte réclame --w colonnes (réglé par le curseur Largeur ou le préréglage).
+   Sous 1200 px : au moins 6 colonnes (--w-tablet) ; sous 768 px : pleine largeur. */
+.cards-grid.layout-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.layout-grid .var-card { grid-column: span var(--w, 4); }
+.layout-grid .size-sm { --w: 4; }
+.layout-grid .size-md { --w: 8; }
+.layout-grid .size-lg { --w: 12; }
 @media (max-width: 1199px) {
-  .cards-grid.layout-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .layout-grid .size-lg { grid-column: span 2; }
+  .layout-grid .var-card { grid-column: span var(--w-tablet, 6); }
 }
 @media (max-width: 767px) {
-  .cards-grid.layout-grid { grid-template-columns: minmax(0, 1fr); }
-  .layout-grid .size-md, .layout-grid .size-lg { grid-column: span 1; }
+  .layout-grid .var-card { grid-column: 1 / -1; }
 }
 
 /* Édition : barre d'outils de carte et repères de glisser-déposer */
@@ -160,8 +162,11 @@ body.auth-pending > :not(#app-nav) { display: none !important; }
 .editing .card-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .75rem;
   padding-top: .75rem; border-top: 1px dashed var(--border); }
 .card-tools .card-size { width: auto; }
-.drag-hint { color: var(--muted); font-size: .8rem; margin-right: auto; }
-.editing .var-card { cursor: grab; outline: 1px dashed var(--border); }
+.drag-handle { margin-right: auto; padding: .45rem .8rem; border: 1px dashed var(--border-strong); border-radius: 6px;
+  color: var(--text); font-size: .85rem; cursor: grab; user-select: none; touch-action: none; }
+.drag-handle:hover { border-color: var(--accent); background: var(--surface-2); }
+.drag-handle:active { cursor: grabbing; }
+.editing .var-card { outline: 1px dashed var(--border); }
 .var-card.dragging { opacity: .45; }
 .var-card.drop-target { outline: 3px solid var(--accent); outline-offset: 2px; }
 
@@ -206,13 +211,13 @@ h1.h4 { font-weight: 700; }
 .form-check-label { padding-left: .25rem; }
 .form-check { min-height: 1.75rem; }
 .form-label { font-weight: 500; }
-.form-control, .form-select { background-color: var(--bg); border-color: #3a4351; }
+.form-control, .form-select { background-color: var(--bg); border-color: var(--border-strong); }
 .btn:focus-visible, a:focus-visible, .form-control:focus-visible, .form-select:focus-visible,
 .form-check-input:focus-visible, summary:focus-visible, dialog:focus-visible {
   outline: 3px solid var(--accent); outline-offset: 2px; box-shadow: none;
 }
 a { color: var(--accent); }
-.btn-outline-light { --bs-btn-border-color: #5b6573; }
+.btn-outline-light { --bs-btn-border-color: var(--border-strong); }
 .invalid-feedback { font-size: .9rem; }
 
 /* Tableaux de données */
@@ -238,7 +243,7 @@ dialog { box-shadow: 0 12px 40px rgba(0,0,0,.6); max-height: 94vh; overflow-y: a
 .card-tools .btn, .card-tools .form-select { min-height: 40px; }
 
 /* Graphiques : conteneur plus haut sur grand écran */
-@media (min-width: 1400px) { .chart-wrap { height: 170px; } }
+@media (min-width: 1400px) { .chart-wrap { height: var(--chart-h, 170px); } }
 
 /* Tablette (>= 768 px) et téléphone */
 @media (max-width: 991px) {
@@ -259,5 +264,43 @@ dialog { box-shadow: 0 12px 40px rgba(0,0,0,.6); max-height: 94vh; overflow-y: a
 }
 /* Contraste renforcé si demandé par le système */
 @media (prefers-contrast: more) {
-  :root { --border: #55606f; --muted: #c0c8d2; }
+  :root[data-bs-theme="dark"] { --border: #55606f; --muted: #c0c8d2; }
+  :root[data-bs-theme="light"] { --border: #7b8696; --muted: #3a4452; }
+}
+
+/* --- Réglages fins d'une carte (mode édition) ------------------------------- */
+.card-tools .tool-field { display: inline-flex; align-items: center; gap: .45rem; margin: 0; font-size: .9rem; color: var(--muted); }
+.card-tools .form-range { width: 9rem; min-height: 0; }
+.card-tools .tool-value { min-width: 3.4rem; color: var(--text); font-variant-numeric: tabular-nums; }
+.card-tools .card-color { width: 3rem; padding: .2rem; cursor: pointer; }
+.editing .card-tools { row-gap: .6rem; }
+
+/* --- Thème clair ------------------------------------------------------------
+   Même noms de variables que le thème sombre : seules les valeurs changent. Placé en dernier pour l'emporter. */
+:root[data-bs-theme="light"] {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #eaeef3;
+  --border: #d3dae3;
+  --border-strong: #a9b4c2;
+  --text: #1b2430;
+  --muted: #566274;           /* >= 6:1 sur --surface */
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --ko: #cf222e;
+  --unknown: #8c959f;
+  --accent: #0b69d4;
+  --grid: rgba(0, 0, 0, .09);
+}
+[data-bs-theme="light"] .var-card { box-shadow: 0 1px 3px rgba(20, 30, 45, .12); }
+[data-bs-theme="light"] .var-card:hover { box-shadow: 0 3px 10px rgba(20, 30, 45, .18); }
+[data-bs-theme="light"] .login-card, [data-bs-theme="light"] dialog { box-shadow: 0 8px 30px rgba(20, 30, 45, .2); }
+[data-bs-theme="light"] dialog::backdrop { background: rgba(20, 30, 45, .45); }
+[data-bs-theme="light"] .dot.ok, [data-bs-theme="light"] .dot.ko, [data-bs-theme="light"] .dot.warn { box-shadow: none; }
+/* Les boutons « outline-light » de Bootstrap sont blancs : invisibles sur fond clair. */
+[data-bs-theme="light"] .btn-outline-light {
+  --bs-btn-color: var(--text); --bs-btn-border-color: var(--border-strong);
+  --bs-btn-hover-color: var(--text); --bs-btn-hover-bg: var(--surface-2); --bs-btn-hover-border-color: var(--muted);
+  --bs-btn-active-color: var(--text); --bs-btn-active-bg: var(--border); --bs-btn-active-border-color: var(--muted);
+  --bs-btn-disabled-color: var(--muted); --bs-btn-disabled-border-color: var(--border);
 }

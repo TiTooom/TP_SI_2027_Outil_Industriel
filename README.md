@@ -179,6 +179,16 @@ Sous PowerShell, la redirection `<` n'existe pas : utiliser Git Bash. Ne pas lan
 
 Le sélecteur « Tableau » de la page *Tableau de bord* permet aussi de créer des tableaux personnels ou d'équipe, dont les cartes se déplacent par glisser-déposer (bouton « Modifier »).
 
+En mode édition, chaque carte se règle librement :
+
+- **Largeur** : curseur de 2 à 12 colonnes (grille de 12), ou préréglage Petit / Moyen / Grand.
+- **Hauteur** du graphique : curseur de 80 à 600 px.
+- **Couleur de la courbe** : sélecteur de couleur, avec « Couleur par défaut » pour revenir au bleu du thème.
+
+Ces réglages sont enregistrés avec le tableau (bouton « Enregistrer »). Sous 1200 px d'écran, une carte occupe au moins la moitié de la largeur ; sous 768 px, toute la largeur.
+
+**Mode clair / sombre** : bouton dans la barre de navigation, choix mémorisé dans le navigateur. Le thème sombre reste le thème par défaut.
+
 ## Aperçu
 
 ![Tableau de bord temps réel](ASSETS/dashboard.png)

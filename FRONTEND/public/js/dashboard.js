@@ -7,6 +7,8 @@ import { mountNav } from './nav.js';
 import { initLayout } from './layout.js';
 import { STATES, el } from './dom.js';
 import { formatValue, formatClock } from './format.js';
+import { chartColors, onThemeChange } from './theme.js';
+import { HEIGHT, SIZE_WIDTH, WIDTH, heightOf, widthOf } from './widget.js';
 
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_POINTS = 300;
@@ -33,18 +35,13 @@ let generation = 0; // invalide les boucles de liste d'une session précédente 
 
 // --- Graphique ---------------------------------------------------------------
 
-function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
 function createChart(canvas, variable) {
-  const gridColor = 'rgba(255,255,255,.08)';
-  const muted = cssVar('--muted');
+  const { grid: gridColor, muted, accent } = chartColors();
   return new Chart(canvas, {
     type: 'line',
     data: {
       datasets: [{
-        data: [], parsing: false, spanGaps: false, borderColor: cssVar('--accent'), borderWidth: 2,
+        data: [], parsing: false, spanGaps: false, borderColor: accent, borderWidth: 2,
         pointRadius: 0, tension: 0, stepped: variable.data_type === 'bool' ? 'before' : false,
       }],
     },
@@ -60,6 +57,16 @@ function createChart(canvas, variable) {
       },
     },
   });
+}
+
+// Couleurs dépendantes du thème et couleur de courbe choisie (card.color, sinon l'accent du thème).
+function styleChart(card) {
+  const { grid, muted, accent } = chartColors();
+  const { x, y } = card.chart.options.scales;
+  x.grid.color = y.grid.color = grid;
+  x.ticks.color = y.ticks.color = muted;
+  card.chart.data.datasets[0].borderColor = card.color ?? accent;
+  card.chart.update('none');
 }
 
 // Fenêtre glissante : retire les points trop vieux ou en surnombre, recale l'axe X.
@@ -101,8 +108,14 @@ function buildTools(variable) {
     className: 'form-select form-select-sm card-size',
     attrs: { 'aria-label': `Taille de ${name}`, 'data-testid': 'card-size' },
   }, [['sm', 'Petit'], ['md', 'Moyen'], ['lg', 'Grand']].map(([v, t]) => el('option', { text: t, attrs: { value: v } })));
-  const handle = el('span', { className: 'drag-hint', text: '⠿ glisser', attrs: { 'aria-hidden': 'true' } });
-  const root = el('div', { className: 'card-tools', attrs: { role: 'group', 'aria-label': `Édition de ${name}` } }, [handle, up, down, size, remove]);
+  const handle = el('span', { className: 'drag-handle', text: '⠿ glisser', attrs: { title: 'Glisser pour déplacer la carte' } });
+  const width = slider(`Largeur de ${name}`, 'Largeur', 'card-width', { min: WIDTH.min, max: WIDTH.max, step: 1 }, (n) => `${n}/12`);
+  const height = slider(`Hauteur du graphique de ${name}`, 'Hauteur', 'card-height', { min: HEIGHT.min, max: HEIGHT.max, step: HEIGHT.step }, (n) => `${n} px`);
+  const color = el('input', { className: 'form-control form-control-color card-color', attrs: { type: 'color', 'aria-label': `Couleur de la courbe de ${name}`, 'data-testid': 'card-color' } });
+  const resetColor = btn('card-color-reset', 'Couleur par défaut', `Rétablir la couleur de la courbe de ${name}`);
+  const colorGroup = el('label', { className: 'tool-field' }, [el('span', { text: 'Courbe' }), color]);
+  const root = el('div', { className: 'card-tools', attrs: { role: 'group', 'aria-label': `Édition de ${name}` } },
+    [handle, up, down, size, remove, width.root, height.root, colorGroup, resetColor]);
 
   const id = variable.id;
   // Après un déplacement le DOM est réordonné : on rend le focus au bouton (ou à son opposé s'il est désactivé).
@@ -114,11 +127,33 @@ function buildTools(variable) {
   moveWith(down, up, 1);
   size.addEventListener('change', () => display.actions?.resize(id, size.value));
   remove.addEventListener('click', () => display.actions?.remove(id));
-  return { root, up, down, size };
+  width.input.addEventListener('input', () => display.actions?.style(id, { w: Number(width.input.value) }));
+  height.input.addEventListener('input', () => display.actions?.style(id, { h: Number(height.input.value) }));
+  color.addEventListener('input', () => display.actions?.style(id, { color: color.value }));
+  resetColor.addEventListener('click', () => display.actions?.style(id, { color: null }));
+  return { root, handle, up, down, size, width, height, color, resetColor };
+}
+
+// Curseur étiqueté avec sa valeur lisible (« 6/12 », « 180 px »).
+function slider(ariaLabel, label, testId, { min, max, step }, format) {
+  const input = el('input', {
+    className: 'form-range', attrs: { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': ariaLabel, 'data-testid': testId },
+  });
+  const value = el('output', { className: 'tool-value' });
+  const set = (n) => { input.value = String(n); value.textContent = format(Number(input.value)); };
+  input.addEventListener('input', () => { value.textContent = format(Number(input.value)); });
+  return { root: el('label', { className: 'tool-field' }, [el('span', { text: label }), input, value]), input, set };
 }
 
 // Glisser-déposer HTML5 natif : la carte glissée prend la place de la carte survolée.
-function attachDrag(node, id) {
+// La carte n'est « glissable » que pendant un appui sur sa poignée : sinon tirer un curseur ou
+// le sélecteur de couleur entraînerait toute la carte avec lui.
+function attachDrag(node, id, handle) {
+  const arm = () => { node.draggable = display.editing; };
+  const disarm = () => { node.draggable = false; };
+  handle.addEventListener('pointerdown', arm);
+  handle.addEventListener('pointerup', disarm);
+  handle.addEventListener('pointercancel', disarm);
   node.addEventListener('dragstart', (e) => {
     if (!display.editing || e.target !== node) return;
     dragId = id;
@@ -127,6 +162,7 @@ function attachDrag(node, id) {
     node.classList.add('dragging');
   });
   node.addEventListener('dragend', () => {
+    disarm();
     dragId = null;
     node.classList.remove('dragging');
     for (const n of grid.querySelectorAll('.drop-target')) n.classList.remove('drop-target');
@@ -158,12 +194,12 @@ function buildCard(variable, plcName) {
   canvas.setAttribute('aria-label', `Évolution de ${variable.name} sur les 10 dernières minutes`);
   const tools = buildTools(variable);
   node.append(tools.root);
-  attachDrag(node, variable.id);
+  attachDrag(node, variable.id, tools.handle);
   return {
     variable, signature: signatureOf(variable, plcName), node, tools,
     valueEl: node.querySelector('.var-value'), badgeEl: node.querySelector('.state-badge'),
     footEl: node.querySelector('.var-foot'), lastTs: 0, lastMeasure: null, historyLoaded: false,
-    chart: createChart(canvas, variable),
+    color: null, chart: createChart(canvas, variable),
   };
 }
 
@@ -238,13 +274,32 @@ function restartPollTimer() {
   pollTimer = setInterval(tick, pollIntervalMs());
 }
 
+// Applique taille, hauteur et couleur d'un widget (null = vue « Toutes les variables », réglages par défaut).
+// setProperty plutôt qu'un attribut style : la CSP interdit le style inline.
+function applyWidget(card, widget) {
+  const { node, tools } = card;
+  node.className = widget ? `var-card size-${widget.size}` : 'var-card';
+  const set = (name, value) => (value === null ? node.style.removeProperty(name) : node.style.setProperty(name, value));
+  set('--w', widget ? String(widthOf(widget)) : null);
+  // Sous 1200 px une carte étroite deviendrait illisible : on impose 6 colonnes au minimum.
+  set('--w-tablet', widget ? String(Math.max(6, widthOf(widget))) : null);
+  set('--chart-h', widget?.h ? `${widget.h}px` : null);
+  tools.size.value = widget?.size ?? 'md';
+  tools.width.set(widget ? widthOf(widget) : SIZE_WIDTH.md);
+  tools.height.set(widget ? heightOf(widget) : HEIGHT.fallback);
+  const color = widget?.color ?? null;
+  tools.color.value = color ?? chartColors().accent;
+  tools.resetColor.disabled = color === null;
+  if (card.color !== color) { card.color = color; styleChart(card); }
+}
+
 // Fait correspondre les cartes au tableau choisi : crée les manquantes, détruit les retirées
 // ou modifiées (chart.destroy), réordonne et applique tailles / état d'édition sans toucher aux autres.
 function reconcile() {
   if (!catalogReady || !display.ready) return [];
   const wanted = display.widgets === null
-    ? [...active.values()].sort((a, b) => a.variable.id - b.variable.id).map((e) => ({ ...e, size: null }))
-    : display.widgets.filter((w) => active.has(w.variableId)).map((w) => ({ ...active.get(w.variableId), size: w.size }));
+    ? [...active.values()].sort((a, b) => a.variable.id - b.variable.id).map((e) => ({ ...e, widget: null }))
+    : display.widgets.filter((w) => active.has(w.variableId)).map((w) => ({ ...active.get(w.variableId), widget: w }));
   const wantedIds = new Set(wanted.map((e) => e.variable.id));
   const loads = [];
   let changed = false;
@@ -267,12 +322,10 @@ function reconcile() {
   grid.classList.toggle('layout-grid', display.widgets !== null);
   grid.classList.toggle('editing', display.editing);
   ordered.forEach((card, i) => {
-    const size = display.widgets === null ? null : wanted[i].size;
-    card.node.className = size ? `var-card size-${size}` : 'var-card';
-    card.node.draggable = display.editing;
+    applyWidget(card, wanted[i].widget);
+    if (!display.editing) card.node.draggable = false;
     card.tools.up.disabled = i === 0;
     card.tools.down.disabled = i === ordered.length - 1;
-    card.tools.size.value = size ?? 'md';
   });
   if (changed) restartPollTimer();
   if (cards.size || display.editing) showView('cards');
@@ -358,6 +411,11 @@ display.show = (widgets, editing, actions) => {
   display.actions = actions;
   reconcile();
 };
+
+// Changement de thème : les graphiques relisent leurs couleurs (axes, grille, courbe par défaut).
+onThemeChange(() => {
+  for (const card of cards.values()) styleChart(card);
+});
 
 const user = await mountNav();
 layout = initLayout({ user, display });
